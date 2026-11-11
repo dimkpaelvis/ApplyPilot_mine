@@ -33,7 +33,7 @@ pip install --no-deps python-jobspy    # separate install (broken numpy pin in m
 pip install pydantic tls-client requests markdownify regex  # jobspy runtime deps
 applypilot init          # one-time setup: resume, profile, preferences, API keys
 applypilot run           # discover > enrich > score > tailor > cover letters
-applypilot apply         # autonomous browser-driven submission
+applypilot apply         # sequential, human-approved browser assistance
 applypilot track         # scan Gmail for responses and surface action items
 ```
 
@@ -62,7 +62,7 @@ Runs stages 1–5: discovers jobs, scores them, tailors your resume, generates c
 | **3. Score** | AI rates every job 1–10 against your resume and preferences. Only high-fit jobs proceed. Failed scores retry with backoff instead of writing a 0 |
 | **4. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. `resume_facts` (companies, metrics, projects) are preserved exactly — never fabricated |
 | **5. Cover Letter** | AI generates a targeted cover letter per job referencing the specific company, role, and your relevant experience |
-| **6. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers screening questions, and submits. Per-worker Chrome instances with ATS session persistence |
+| **6. Apply Review** | Playwright opens forms, Gemini suggests values grounded in your profile, and the user explicitly approves each final submission |
 | **7. Track** | Scans Gmail for responses, classifies emails (rejection / interview / ghosting), surfaces action items, and flags jobs with no response after N days |
 
 Each stage is independent. Run them all or pick what you need.
@@ -77,9 +77,9 @@ Each stage is independent. Run them all or pick what you need.
 | AI scoring | 1–10 fit score per job | Basic filtering | Your gut feeling |
 | Resume tailoring | Per-job AI rewrite | Template-based | Hours per application |
 | Auto-apply | Full form navigation + submission | LinkedIn Easy Apply only | Click, type, repeat |
-| Human-in-the-loop | HITL pauses for login walls, CAPTCHAs, screening Q&A | None | Always |
+| Human-in-the-loop | Explicit approval before every submission; user handles login, MFA and CAPTCHA | None | Always |
 | Response tracking | Gmail scanning + classification | None | Manual inbox triage |
-| LLM fallback | Gemini → OpenAI → Claude cascade | Single provider | N/A |
+| LLM fallback | Gemini → OpenAI → optional Anthropic API fallback | Single provider | N/A |
 | License | AGPL-3.0 | MIT | N/A |
 
 ---
@@ -162,7 +162,7 @@ Writes a targeted cover letter per job referencing the specific company, role, a
 
 ### Auto-Apply
 
-Claude Code launches Chrome instances, navigates to each application page, detects the ATS type (Workday, Greenhouse, Lever, iCIMS, and more), fills personal information and work history, uploads the tailored resume and cover letter, answers screening questions, and submits.
+The Playwright agent opens one application at a time. Gemini maps visible fields to facts explicitly present in your profile; unknown or sensitive questions remain for your review. The agent can upload a tailored resume when a file input is available. It never bypasses login, CAPTCHA or MFA, and requires your explicit approval before clicking submit.
 
 Key behaviors:
 - **Sequential review**: one application at a time by default
@@ -171,8 +171,8 @@ Key behaviors:
 - **Company-aware scheduling**: jobs are spread across employers to avoid submitting to the same company twice in a row
 
 ```bash
-applypilot apply                                  # launch with defaults (5 workers)
-applypilot apply --workers 3 --min-score 9        # tune parallelism and score floor
+applypilot apply --limit 1                     # review one prepared application
+applypilot apply --limit 1 --min-score 9      # review one high-fit application
 applypilot apply --url URL --dry-run              # test a single job without submitting
 applypilot apply --fresh-sessions                 # refresh Chrome cookies from your real profile first
 applypilot apply --sessions                       # list saved ATS sessions
@@ -188,7 +188,7 @@ applypilot apply --gen --url URL                  # generate prompt file for man
 
 ### Human-in-the-Loop (HITL)
 
-When the apply agent hits something it can't solve autonomously (a login wall, CAPTCHA, or an unusual form), it pauses and asks you to take over.
+If login, CAPTCHA, MFA, or an unsupported form appears, complete it yourself or stop the run. The agent will not bypass site protections.
 
 **In-pipeline HITL** (default): Chrome stays open with the current page. A floating badge appears in the corner showing the problem and a "Take Over / Done" button. You solve it, click Done, and the agent resumes on the same Chrome session.
 
@@ -391,7 +391,7 @@ None of this is uploaded to any ApplyPilot server. There is no ApplyPilot cloud.
 |-------------|-------|-----|
 | Your resume + job description | Gemini (Google) or OpenAI | Scoring and tailoring |
 | Your resume + company info | Gemini or OpenAI | Cover letter generation |
-| Form field contents + job URL | Claude (Anthropic) | Auto-apply stage |
+| Form field contents + job URL | Gemini (Google) | Field-mapping stage; only profile facts are included |
 
 **Your resume content is sent to Google and/or OpenAI** every time a job is scored or tailored. Review the privacy policies of [Google AI Studio](https://aistudio.google.com) and [OpenAI](https://openai.com/policies/privacy-policy).
 
@@ -407,7 +407,7 @@ None of this is uploaded to any ApplyPilot server. There is no ApplyPilot cloud.
 
 ### The auto-apply stage (Tier 3)
 
-The auto-apply stage spawns a Claude Code subprocess with `--bypassPermissions`. This means Claude can take autonomous actions in the browser without asking for confirmation on each step. It is sandboxed with `--strict-mcp-config` to limit which browser tools it can access, but you are granting meaningful autonomy to an AI agent acting on your behalf.
+The browser stage uses Playwright directly and does not launch Claude Code. Each final submission requires the user to type SUBMIT, and the agent only records success after the user confirms the employer portal's confirmation. CAPTCHA and MFA must be completed by the user.
 
 Dry run first:
 
