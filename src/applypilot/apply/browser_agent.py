@@ -32,6 +32,24 @@ def _load_jobs(limit, min_score, max_age_days, max_score, target_url):
     params.append(max(1, limit))
     return [dict(row) for row in conn.execute(sql, params).fetchall()]
 
+def _placeholder_paths(value, prefix=""):
+    """Find template/sample values that must never be submitted as real data."""
+    found = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            found.extend(_placeholder_paths(child, f"{prefix}.{key}" if prefix else str(key)))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            found.extend(_placeholder_paths(child, f"{prefix}[{index}]"))
+    elif isinstance(value, str):
+        lowered = value.strip().lower()
+        if (lowered.startswith("your_") or "your.email@example.com" in lowered
+                or lowered in {"your city", "your state/province", "your country",
+                               "your university", "company a", "company b",
+                               "project x", "project y", "your preferred name"}):
+            found.append(prefix)
+    return found
+
 def _profile_facts(profile):
     personal = profile.get("personal", {})
     return {"personal": {k:v for k,v in personal.items()
@@ -104,6 +122,12 @@ def run_browser_apply(limit=1,min_score=8,max_age_days=14,max_score=None,
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(f"Profile not found: {PROFILE_PATH}. Run applypilot init first.")
     profile=json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
+    if not isinstance(profile, dict):
+        raise ValueError("The profile must be a JSON object. Re-run applypilot init and review profile.json.")
+    placeholders = _placeholder_paths(profile)
+    if placeholders:
+        raise ValueError("Template values remain in profile.json and must be replaced before applying: "
+                         + ", ".join(placeholders[:12]))
     jobs=_load_jobs(limit,min_score,max_age_days,max_score,target_url)
     if not jobs:
         print("No eligible jobs with tailored resumes are ready."); return 0
