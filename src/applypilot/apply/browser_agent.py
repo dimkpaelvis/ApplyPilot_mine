@@ -114,10 +114,6 @@ def _fill_fields(page, answers):
 
 def run_browser_apply(limit=1,min_score=8,max_age_days=14,max_score=None,
                       target_url=None,headless=False,dry_run=False):
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise RuntimeError("Playwright is missing. Install dependencies and run playwright install chromium.") from exc
     if not PROFILE_PATH.exists():
         raise FileNotFoundError(f"Profile not found: {PROFILE_PATH}. Run applypilot init first.")
     profile=json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
@@ -134,6 +130,17 @@ def run_browser_apply(limit=1,min_score=8,max_age_days=14,max_score=None,
     jobs=_load_jobs(limit,min_score,max_age_days,max_score,target_url)
     if not jobs:
         print("No eligible jobs with tailored resumes are ready."); return 0
+    if dry_run:
+        print("DRY RUN — no browser launched and no application data changed.")
+        for job in jobs:
+            print(f"{job.get('title') or 'Untitled'} — {job.get('company') or 'Unknown company'} (score {job.get('fit_score')})")
+            print(f"  URL: {job.get('application_url') or job['url']}")
+            print(f"  Resume: {job.get('tailored_resume_path')}")
+        return 0
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RuntimeError("Playwright is missing. Install dependencies and run playwright install chromium.") from exc
     completed=0
     with sync_playwright() as p:
         browser=p.chromium.launch(headless=headless)
@@ -146,8 +153,6 @@ def run_browser_apply(limit=1,min_score=8,max_age_days=14,max_score=None,
                 log.warning("Skipping invalid application URL: %s",url); continue
             print(f"\n{job.get('title') or 'Untitled'} — {job.get('company') or parsed.netloc} (score {job.get('fit_score')})")
             print(url)
-            if dry_run:
-                print(f"DRY RUN: would open; resume={job.get('tailored_resume_path')}"); continue
             page.goto(url,wait_until="domcontentloaded",timeout=60000); page.wait_for_timeout(1500)
             body=(page.locator("body").inner_text(timeout=5000) or "").lower()
             if any(token in body for token in ("verify you are human","captcha","security challenge")):
