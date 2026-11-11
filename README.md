@@ -42,7 +42,7 @@ applypilot track         # scan Gmail for responses and surface action items
 ## Two Paths
 
 ### Full Pipeline (recommended)
-**Requires:** Python 3.11+, Node.js (for npx), Gemini API key (free), Claude Code CLI, Chrome
+**Requires:** Python 3.11+, Gemini API key, Playwright Chromium
 
 Runs all stages end-to-end: job discovery through autonomous application submission and response tracking.
 
@@ -92,7 +92,7 @@ Each stage is independent. Run them all or pick what you need.
 | Node.js 18+ | Auto-apply | Needed for `npx` to run Playwright MCP server |
 | Gemini API key | Scoring, tailoring, cover letters, tracking | Free tier (15 RPM / 1M tokens/day) is enough |
 | Chrome/Chromium | Auto-apply | Auto-detected on most systems |
-| Claude Code CLI | Auto-apply | Install from [claude.ai/code](https://claude.ai/code) |
+| Playwright Chromium | Apply assistance | Install with playwright install chromium |
 
 **Gemini API key is free.** Get one at [aistudio.google.com](https://aistudio.google.com). OpenAI is also supported as a fallback — see [LLM Configuration](#llm-configuration).
 
@@ -102,7 +102,7 @@ Each stage is independent. Run them all or pick what you need.
 |-----------|-------------|
 | Gmail OAuth (via Google Cloud) | Enables response tracking with `applypilot track` |
 | OpenAI API key | Fallback if Gemini rate limits are hit |
-| CapSolver API key | Solves CAPTCHAs during auto-apply (hCaptcha, reCAPTCHA, Turnstile) |
+| — | CAPTCHA / MFA | User completes verification manually; no bypass is attempted |
 
 > **Note:** python-jobspy is installed separately with `--no-deps` because it pins an exact numpy version in its metadata that conflicts with pip's resolver. It works fine at runtime.
 
@@ -165,7 +165,7 @@ Writes a targeted cover letter per job referencing the specific company, role, a
 Claude Code launches Chrome instances, navigates to each application page, detects the ATS type (Workday, Greenhouse, Lever, iCIMS, and more), fills personal information and work history, uploads the tailored resume and cover letter, answers screening questions, and submits.
 
 Key behaviors:
-- **Parallel workers**: multiple Chrome instances run simultaneously (default: 5)
+- **Sequential review**: one application at a time by default
 - **ATS session persistence**: login cookies are saved per ATS so you don't re-login every run
 - **Per-worker status badge**: a floating badge is injected into Chrome via CDP showing the current job, status, and worker controls
 - **Company-aware scheduling**: jobs are spread across employers to avoid submitting to the same company twice in a row
@@ -241,7 +241,7 @@ applypilot creds import-logs --dry-run          # preview without writing
 
 ---
 
-## Using ApplyPilot with Claude Code
+## Using ApplyPilot's native browser agent
 
 Claude Code is Anthropic's CLI tool. Instead of memorizing every command, you can open the project in Claude Code and tell it what you want in plain language — it reads logs, runs commands, interprets errors, and fixes things that break.
 
@@ -458,3 +458,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 ApplyPilot is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
 You are free to use, modify, and distribute this software. If you deploy a modified version as a service, you must release your source code under the same license.
+
+
+## Native Playwright + Gemini migration
+
+This fork's browser application stage no longer launches Claude Code or the Playwright MCP subprocess. Configure GEMINI_API_KEY and optionally LLM_MODEL / LLM_MODEL_QUALITY in ~/.applypilot/.env. Gemini requests use Google's x-goog-api-key header. Install Chromium with `playwright install chromium`.
+
+The apply command is deliberately sequential and human-approved. `--dry-run` only previews selected jobs; it does not visit forms. The browser agent records an application only after you confirm that the employer portal showed a successful submission. Complete CAPTCHA, MFA, and account login yourself. Never put job-board passwords or API keys into prompts. ATS-specific form behavior still needs testing against representative Greenhouse, Lever, and Workday applications before unattended use is considered.
