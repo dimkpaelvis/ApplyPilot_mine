@@ -1,4 +1,4 @@
-from applypilot.apply.browser_agent import _profile_facts
+from applypilot.apply.browser_agent import _placeholder_paths, _profile_facts
 
 
 def test_profile_facts_excludes_password_and_identity_secrets():
@@ -36,3 +36,21 @@ def test_profile_facts_handles_missing_sections():
         "experience": {},
         "skills_boundary": {},
     }
+
+
+def test_placeholder_profile_values_are_detected_before_apply():
+    profile = {
+        "personal": {"full_name": "YOUR_LEGAL_NAME", "email": "user@example.test"},
+        "experience": {"target_role": "Junior Data Analyst"},
+    }
+
+    assert _placeholder_paths(profile) == ["personal.full_name"]
+
+
+def test_real_profile_values_are_not_flagged():
+    profile = {
+        "personal": {"full_name": "Alex Example", "email": "alex@example.com"},
+        "experience": {"target_role": "Junior Data Analyst"},
+    }
+
+    assert _placeholder_paths(profile) == []
