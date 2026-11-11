@@ -25,13 +25,12 @@ def test_profile_facts_excludes_password_and_identity_secrets():
     assert "password" not in str(facts)
     assert "000-00-0000" not in str(facts)
     assert "secret-id" not in str(facts)
-    assert facts["work_authorization"]["legally_authorized_to_work"] == "Yes"
+    assert "work_authorization" not in facts
 
 
 def test_profile_facts_handles_missing_sections():
     assert _profile_facts({}) == {
         "personal": {},
-        "work_authorization": {},
         "availability": {},
         "experience": {},
         "skills_boundary": {},
