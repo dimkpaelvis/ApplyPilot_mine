@@ -195,7 +195,7 @@ def apply(
         ),
     ),
     max_score: Optional[int] = typer.Option(None, "--max-score", help="Maximum fit score for job selection (useful for testing on lower-score jobs)."),
-    model: str = typer.Option("gemini-2.5-flash", "--model", "-m", help="Gemini model identifier used by the configured LLM client."),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override the Gemini model configured in LLM_MODEL."),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
@@ -313,7 +313,10 @@ def apply(
     console.print("\n[bold blue]Launching Auto-Apply[/bold blue]")
     console.print(f"  Limit:    {'unlimited' if continuous else effective_limit}")
     console.print("  Workers:  1 (sequential review)")
-    console.print(f"  Model:    {model}")
+    import os
+    if model:
+        os.environ["LLM_MODEL"] = model
+    console.print(f"  Model:    {model or os.environ.get('LLM_MODEL', 'gemini-2.5-flash')}")
     console.print(f"  Headless: {headless}")
     console.print(f"  Dry run:  {dry_run}")
     if fresh_sessions:
