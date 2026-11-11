@@ -33,7 +33,7 @@ pip install --no-deps python-jobspy    # separate install (broken numpy pin in m
 pip install pydantic tls-client requests markdownify regex  # jobspy runtime deps
 applypilot init          # one-time setup: resume, profile, preferences, API keys
 applypilot run           # discover > enrich > score > tailor > cover letters
-applypilot apply         # autonomous browser-driven submission
+applypilot apply         # sequential, human-approved browser assistance
 applypilot track         # scan Gmail for responses and surface action items
 ```
 
@@ -42,7 +42,7 @@ applypilot track         # scan Gmail for responses and surface action items
 ## Two Paths
 
 ### Full Pipeline (recommended)
-**Requires:** Python 3.11+, Node.js (for npx), Gemini API key (free), Claude Code CLI, Chrome
+**Requires:** Python 3.11+, Gemini API key, Playwright Chromium
 
 Runs all stages end-to-end: job discovery through autonomous application submission and response tracking.
 
@@ -62,7 +62,7 @@ Runs stages 1–5: discovers jobs, scores them, tailors your resume, generates c
 | **3. Score** | AI rates every job 1–10 against your resume and preferences. Only high-fit jobs proceed. Failed scores retry with backoff instead of writing a 0 |
 | **4. Tailor** | AI rewrites your resume per job: reorganizes, emphasizes relevant experience, adds keywords. `resume_facts` (companies, metrics, projects) are preserved exactly — never fabricated |
 | **5. Cover Letter** | AI generates a targeted cover letter per job referencing the specific company, role, and your relevant experience |
-| **6. Auto-Apply** | Claude Code navigates application forms, fills fields, uploads documents, answers screening questions, and submits. Per-worker Chrome instances with ATS session persistence |
+| **6. Apply Review** | Playwright opens forms, Gemini suggests values grounded in your profile, and the user explicitly approves each final submission |
 | **7. Track** | Scans Gmail for responses, classifies emails (rejection / interview / ghosting), surfaces action items, and flags jobs with no response after N days |
 
 Each stage is independent. Run them all or pick what you need.
@@ -77,9 +77,9 @@ Each stage is independent. Run them all or pick what you need.
 | AI scoring | 1–10 fit score per job | Basic filtering | Your gut feeling |
 | Resume tailoring | Per-job AI rewrite | Template-based | Hours per application |
 | Auto-apply | Full form navigation + submission | LinkedIn Easy Apply only | Click, type, repeat |
-| Human-in-the-loop | HITL pauses for login walls, CAPTCHAs, screening Q&A | None | Always |
+| Human-in-the-loop | Explicit approval before every submission; user handles login, MFA and CAPTCHA | None | Always |
 | Response tracking | Gmail scanning + classification | None | Manual inbox triage |
-| LLM fallback | Gemini → OpenAI → Claude cascade | Single provider | N/A |
+| LLM fallback | Gemini → OpenAI → optional Anthropic API fallback | Single provider | N/A |
 | License | AGPL-3.0 | MIT | N/A |
 
 ---
@@ -92,7 +92,7 @@ Each stage is independent. Run them all or pick what you need.
 | Node.js 18+ | Auto-apply | Needed for `npx` to run Playwright MCP server |
 | Gemini API key | Scoring, tailoring, cover letters, tracking | Free tier (15 RPM / 1M tokens/day) is enough |
 | Chrome/Chromium | Auto-apply | Auto-detected on most systems |
-| Claude Code CLI | Auto-apply | Install from [claude.ai/code](https://claude.ai/code) |
+| Playwright Chromium | Apply assistance | Install with playwright install chromium |
 
 **Gemini API key is free.** Get one at [aistudio.google.com](https://aistudio.google.com). OpenAI is also supported as a fallback — see [LLM Configuration](#llm-configuration).
 
@@ -102,7 +102,7 @@ Each stage is independent. Run them all or pick what you need.
 |-----------|-------------|
 | Gmail OAuth (via Google Cloud) | Enables response tracking with `applypilot track` |
 | OpenAI API key | Fallback if Gemini rate limits are hit |
-| CapSolver API key | Solves CAPTCHAs during auto-apply (hCaptcha, reCAPTCHA, Turnstile) |
+| — | CAPTCHA / MFA | User completes verification manually; no bypass is attempted |
 
 > **Note:** python-jobspy is installed separately with `--no-deps` because it pins an exact numpy version in its metadata that conflicts with pip's resolver. It works fine at runtime.
 
@@ -162,22 +162,22 @@ Writes a targeted cover letter per job referencing the specific company, role, a
 
 ### Auto-Apply
 
-Claude Code launches Chrome instances, navigates to each application page, detects the ATS type (Workday, Greenhouse, Lever, iCIMS, and more), fills personal information and work history, uploads the tailored resume and cover letter, answers screening questions, and submits.
+The Playwright agent opens one application at a time. Gemini maps visible fields to facts explicitly present in your profile; unknown or sensitive questions remain for your review. The agent can upload a tailored resume when a file input is available. It never bypasses login, CAPTCHA or MFA, and requires your explicit approval before clicking submit.
 
 Key behaviors:
-- **Parallel workers**: multiple Chrome instances run simultaneously (default: 5)
+- **Sequential review**: one application at a time by default
 - **ATS session persistence**: login cookies are saved per ATS so you don't re-login every run
 - **Per-worker status badge**: a floating badge is injected into Chrome via CDP showing the current job, status, and worker controls
 - **Company-aware scheduling**: jobs are spread across employers to avoid submitting to the same company twice in a row
 
 ```bash
-applypilot apply                                  # launch with defaults (5 workers)
-applypilot apply --workers 3 --min-score 9        # tune parallelism and score floor
+applypilot apply --limit 1                     # review one prepared application
+applypilot apply --limit 1 --min-score 9      # review one high-fit application
 applypilot apply --url URL --dry-run              # test a single job without submitting
 applypilot apply --fresh-sessions                 # refresh Chrome cookies from your real profile first
 applypilot apply --sessions                       # list saved ATS sessions
 applypilot apply --clear-session workday          # clear a specific ATS session
-applypilot apply --no-hitl                        # skip HITL waits (for overnight runs)
+applypilot apply --limit 1                     # review one application at a time
 applypilot apply --no-focus                       # prevent Chrome windows from stealing focus
 applypilot apply --reset-failed                   # retry all failed jobs
 applypilot apply --reset-category CATEGORY        # retry jobs in a specific failure category
@@ -188,11 +188,11 @@ applypilot apply --gen --url URL                  # generate prompt file for man
 
 ### Human-in-the-Loop (HITL)
 
-When the apply agent hits something it can't solve autonomously (a login wall, CAPTCHA, or an unusual form), it pauses and asks you to take over.
+If login, CAPTCHA, MFA, or an unsupported form appears, complete it yourself or stop the run. The agent will not bypass site protections.
 
 **In-pipeline HITL** (default): Chrome stays open with the current page. A floating badge appears in the corner showing the problem and a "Take Over / Done" button. You solve it, click Done, and the agent resumes on the same Chrome session.
 
-**Standalone HITL**: If you run apply in `--no-hitl` mode overnight, parked jobs are queued. Run `applypilot human-review` to open a web UI at `localhost:7373` listing all parked jobs with their reasons. Click a job to open Chrome and handle it.
+The legacy standalone HITL queue is not used by the new Playwright application flow. Each application is reviewed in the active browser session.
 
 **Screening Q&A**: When an agent encounters a novel screening question, it surfaces it interactively before parking the job. You answer once; the answer is stored in the Q&A knowledge base and reused automatically on future applications.
 
@@ -241,7 +241,7 @@ applypilot creds import-logs --dry-run          # preview without writing
 
 ---
 
-## Using ApplyPilot with Claude Code
+## Using ApplyPilot's native browser agent
 
 Claude Code is Anthropic's CLI tool. Instead of memorizing every command, you can open the project in Claude Code and tell it what you want in plain language — it reads logs, runs commands, interprets errors, and fixes things that break.
 
@@ -294,7 +294,7 @@ cp CLAUDE.md.example CLAUDE.md
 
 With a well-maintained `CLAUDE.md`, you can hand off the entire pipeline to Claude Code with a single prompt and it will operate it correctly.
 
-> **A Max plan is required for the auto-apply stage.** Discovery, scoring, tailoring, and tracking run on Gemini/OpenAI and don't use Claude credits. Only `applypilot apply` spawns a Claude Code subprocess.
+The application review stage uses Playwright and the configured LLM; no Claude Code CLI or subscription is required.
 
 ---
 
@@ -318,14 +318,14 @@ applypilot dashboard                     # generate and open HTML dashboard
 ### Apply
 
 ```bash
-applypilot apply                         # launch auto-apply (5 workers by default)
-applypilot apply --workers 3             # parallel browser instances
+applypilot apply --limit 1              # review one prepared application
+applypilot apply --min-score 9 --limit 1 # review one high-fit application
 applypilot apply --min-score 9           # score floor for job selection
 applypilot apply --dry-run               # fill forms without submitting
 applypilot apply --continuous            # run forever, polling for new jobs
 applypilot apply --headless              # headless browser mode
 applypilot apply --url URL               # apply to one specific job
-applypilot apply --no-hitl               # skip HITL waits (for overnight runs)
+The following legacy options are rejected: --continuous, --no-hitl, --workers other than 1.
 applypilot apply --no-focus              # prevent Chrome windows from stealing focus
 applypilot apply --fresh-sessions        # refresh Chrome cookies from your real profile
 applypilot apply --sessions              # list saved ATS sessions
@@ -391,7 +391,7 @@ None of this is uploaded to any ApplyPilot server. There is no ApplyPilot cloud.
 |-------------|-------|-----|
 | Your resume + job description | Gemini (Google) or OpenAI | Scoring and tailoring |
 | Your resume + company info | Gemini or OpenAI | Cover letter generation |
-| Form field contents + job URL | Claude (Anthropic) | Auto-apply stage |
+| Form field contents + job URL | Gemini (Google) | Field-mapping stage; only profile facts are included |
 
 **Your resume content is sent to Google and/or OpenAI** every time a job is scored or tailored. Review the privacy policies of [Google AI Studio](https://aistudio.google.com) and [OpenAI](https://openai.com/policies/privacy-policy).
 
@@ -407,7 +407,7 @@ None of this is uploaded to any ApplyPilot server. There is no ApplyPilot cloud.
 
 ### The auto-apply stage (Tier 3)
 
-The auto-apply stage spawns a Claude Code subprocess with `--bypassPermissions`. This means Claude can take autonomous actions in the browser without asking for confirmation on each step. It is sandboxed with `--strict-mcp-config` to limit which browser tools it can access, but you are granting meaningful autonomy to an AI agent acting on your behalf.
+The browser stage uses Playwright directly and does not launch Claude Code. Each final submission requires the user to type SUBMIT, and the agent only records success after the user confirms the employer portal's confirmation. CAPTCHA and MFA must be completed by the user.
 
 Dry run first:
 
@@ -458,3 +458,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 ApplyPilot is licensed under the [GNU Affero General Public License v3.0](LICENSE).
 
 You are free to use, modify, and distribute this software. If you deploy a modified version as a service, you must release your source code under the same license.
+
+
+## Native Playwright + Gemini migration
+
+This fork's browser application stage no longer launches Claude Code or the Playwright MCP subprocess. Configure GEMINI_API_KEY and optionally LLM_MODEL / LLM_MODEL_QUALITY in ~/.applypilot/.env. Gemini requests use Google's x-goog-api-key header. Install Chromium with `playwright install chromium`.
+
+The apply command is deliberately sequential and human-approved. `--dry-run` only previews selected jobs; it does not visit forms. The browser agent records an application only after you confirm that the employer portal showed a successful submission. Complete CAPTCHA, MFA, and account login yourself. Never put job-board passwords or API keys into prompts. ATS-specific form behavior still needs testing against representative Greenhouse, Lever, and Workday applications before unattended use is considered.

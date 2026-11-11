@@ -181,7 +181,7 @@ def run(
 @app.command()
 def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
-    workers: int = typer.Option(5, "--workers", "-w", help="Number of parallel browser workers."),
+    workers: int = typer.Option(1, "--workers", "-w", help="Compatibility option; only one browser session is supported."),
     min_score: int = typer.Option(
         config.DEFAULTS["min_score"], "--min-score",
         help=f"Minimum fit score for job selection (default: {config.DEFAULTS['min_score']}).",
@@ -195,7 +195,7 @@ def apply(
         ),
     ),
     max_score: Optional[int] = typer.Option(None, "--max-score", help="Maximum fit score for job selection (useful for testing on lower-score jobs)."),
-    model: str = typer.Option("sonnet", "--model", "-m", help="Claude model name (sonnet | haiku | opus)."),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override the Gemini model configured in LLM_MODEL."),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
@@ -219,7 +219,7 @@ def apply(
     from applypilot.config import check_tier, PROFILE_PATH as _profile_path
     from applypilot.database import get_connection
 
-    # --- Utility modes (no Chrome/Claude needed) ---
+    # --- Utility modes (no browser agent required) ---
 
     if mark_applied:
         from applypilot.apply.launcher import mark_job
@@ -278,12 +278,13 @@ def apply(
         console.print(f"[red]Invalid --doc-format:[/red] '{doc_format}'. Must be one of: {', '.join(_valid_fmts)}")
         raise typer.Exit(code=1)
 
-    # Set doc format for apply workers
-    from applypilot.apply.launcher import set_doc_format
-    set_doc_format(doc_format)
+    # Reject legacy modes that no longer have a meaningful Playwright implementation.
+    if continuous or no_hitl or fresh_sessions or no_focus or workers != 1:
+        console.print("[red]Continuous mode, no-HITL, Chrome session import, focus controls, and parallel workers are not supported by the new Playwright agent.[/red]")
+        raise typer.Exit(code=1)
 
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
-    check_tier(3, "auto-apply")
+    # Native Playwright agent replaces the Claude Code browser subprocess.
+    check_tier(3, "Playwright-assisted application review")
 
     # Check 2: Profile exists
     if not _profile_path.exists():
@@ -307,33 +308,20 @@ def apply(
             raise typer.Exit(code=1)
 
     if gen:
-        from applypilot.apply.launcher import gen_prompt
-        target = url or ""
-        if not target:
-            console.print("[red]--gen requires --url to specify which job.[/red]")
-            raise typer.Exit(code=1)
-        prompt_file = gen_prompt(target, min_score=min_score, max_score=max_score, model=model)
-        if not prompt_file:
-            console.print("[red]No matching job found for that URL.[/red]")
-            raise typer.Exit(code=1)
-        mcp_path = _profile_path.parent / ".mcp-apply-0.json"
-        console.print(f"[green]Wrote prompt to:[/green] {prompt_file}")
-        console.print("\n[bold]Run manually:[/bold]")
-        console.print(
-            f"  claude --model {model} -p "
-            f"--mcp-config {mcp_path} "
-            f"--permission-mode bypassPermissions < {prompt_file}"
-        )
-        return
+        console.print("[red]--gen is deprecated: Claude prompt generation has been removed.[/red]")
+        raise typer.Exit(code=1)
 
-    from applypilot.apply.launcher import main as apply_main
+    from applypilot.apply.browser_agent import run_browser_apply
 
     effective_limit = limit if limit is not None else 0
 
     console.print("\n[bold blue]Launching Auto-Apply[/bold blue]")
     console.print(f"  Limit:    {'unlimited' if continuous else effective_limit}")
-    console.print(f"  Workers:  {workers}")
-    console.print(f"  Model:    {model}")
+    console.print("  Workers:  1 (sequential review)")
+    import os
+    if model:
+        os.environ["LLM_MODEL"] = model
+    console.print(f"  Model:    {model or os.environ.get('LLM_MODEL', 'gemini-2.5-flash')}")
     console.print(f"  Headless: {headless}")
     console.print(f"  Dry run:  {dry_run}")
     if fresh_sessions:
@@ -342,21 +330,16 @@ def apply(
         console.print(f"  Target:   {url}")
     console.print()
 
-    apply_main(
-        limit=effective_limit,
+    submitted = run_browser_apply(
+        limit=effective_limit or 1,
         target_url=url,
         min_score=min_score,
         max_age_days=max_age_days,
         max_score=max_score,
         headless=headless,
-        model=model,
         dry_run=dry_run,
-        continuous=continuous,
-        workers=workers,
-        fresh_sessions=fresh_sessions,
-        no_hitl=no_hitl,
-        no_focus=no_focus,
     )
+    console.print(f"[green]Confirmed submissions recorded: {submitted}[/green]")
 
 
 @app.command()
