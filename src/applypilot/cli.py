@@ -278,12 +278,8 @@ def apply(
         console.print(f"[red]Invalid --doc-format:[/red] '{doc_format}'. Must be one of: {', '.join(_valid_fmts)}")
         raise typer.Exit(code=1)
 
-    # Set doc format for apply workers
-    from applypilot.apply.launcher import set_doc_format
-    set_doc_format(doc_format)
-
-    # Check 1: Tier 3 required (Claude Code CLI + Chrome)
-    check_tier(3, "auto-apply")
+    # Native Playwright agent replaces the Claude Code browser subprocess.
+    check_tier(3, "Playwright-assisted application review")
 
     # Check 2: Profile exists
     if not _profile_path.exists():
@@ -326,7 +322,7 @@ def apply(
         )
         return
 
-    from applypilot.apply.launcher import main as apply_main
+    from applypilot.apply.browser_agent import run_browser_apply
 
     effective_limit = limit if limit is not None else 0
 
@@ -342,21 +338,16 @@ def apply(
         console.print(f"  Target:   {url}")
     console.print()
 
-    apply_main(
-        limit=effective_limit,
+    submitted = run_browser_apply(
+        limit=effective_limit or 1,
         target_url=url,
         min_score=min_score,
         max_age_days=max_age_days,
         max_score=max_score,
         headless=headless,
-        model=model,
         dry_run=dry_run,
-        continuous=continuous,
-        workers=workers,
-        fresh_sessions=fresh_sessions,
-        no_hitl=no_hitl,
-        no_focus=no_focus,
     )
+    console.print(f"[green]Confirmed submissions recorded: {submitted}[/green]")
 
 
 @app.command()
