@@ -177,7 +177,7 @@ applypilot apply --url URL --dry-run              # test a single job without su
 applypilot apply --fresh-sessions                 # refresh Chrome cookies from your real profile first
 applypilot apply --sessions                       # list saved ATS sessions
 applypilot apply --clear-session workday          # clear a specific ATS session
-applypilot apply --no-hitl                        # skip HITL waits (for overnight runs)
+applypilot apply --limit 1                     # review one application at a time
 applypilot apply --no-focus                       # prevent Chrome windows from stealing focus
 applypilot apply --reset-failed                   # retry all failed jobs
 applypilot apply --reset-category CATEGORY        # retry jobs in a specific failure category
@@ -192,7 +192,7 @@ If login, CAPTCHA, MFA, or an unsupported form appears, complete it yourself or 
 
 **In-pipeline HITL** (default): Chrome stays open with the current page. A floating badge appears in the corner showing the problem and a "Take Over / Done" button. You solve it, click Done, and the agent resumes on the same Chrome session.
 
-**Standalone HITL**: If you run apply in `--no-hitl` mode overnight, parked jobs are queued. Run `applypilot human-review` to open a web UI at `localhost:7373` listing all parked jobs with their reasons. Click a job to open Chrome and handle it.
+The legacy standalone HITL queue is not used by the new Playwright application flow. Each application is reviewed in the active browser session.
 
 **Screening Q&A**: When an agent encounters a novel screening question, it surfaces it interactively before parking the job. You answer once; the answer is stored in the Q&A knowledge base and reused automatically on future applications.
 
@@ -294,7 +294,7 @@ cp CLAUDE.md.example CLAUDE.md
 
 With a well-maintained `CLAUDE.md`, you can hand off the entire pipeline to Claude Code with a single prompt and it will operate it correctly.
 
-> **A Max plan is required for the auto-apply stage.** Discovery, scoring, tailoring, and tracking run on Gemini/OpenAI and don't use Claude credits. Only `applypilot apply` spawns a Claude Code subprocess.
+The application review stage uses Playwright and the configured LLM; no Claude Code CLI or subscription is required.
 
 ---
 
@@ -318,14 +318,14 @@ applypilot dashboard                     # generate and open HTML dashboard
 ### Apply
 
 ```bash
-applypilot apply                         # launch auto-apply (5 workers by default)
-applypilot apply --workers 3             # parallel browser instances
+applypilot apply --limit 1              # review one prepared application
+applypilot apply --min-score 9 --limit 1 # review one high-fit application
 applypilot apply --min-score 9           # score floor for job selection
 applypilot apply --dry-run               # fill forms without submitting
 applypilot apply --continuous            # run forever, polling for new jobs
 applypilot apply --headless              # headless browser mode
 applypilot apply --url URL               # apply to one specific job
-applypilot apply --no-hitl               # skip HITL waits (for overnight runs)
+The following legacy options are rejected: --continuous, --no-hitl, --workers other than 1.
 applypilot apply --no-focus              # prevent Chrome windows from stealing focus
 applypilot apply --fresh-sessions        # refresh Chrome cookies from your real profile
 applypilot apply --sessions              # list saved ATS sessions
