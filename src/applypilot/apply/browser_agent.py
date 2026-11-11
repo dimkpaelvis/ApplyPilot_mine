@@ -56,7 +56,7 @@ def _suggest_answers(page, profile):
                 except Exception: pass
             if not label:
                 label = field.evaluate("(el) => el.parentElement?.innerText?.slice(0,160) || ''")
-            visible.append({"index":i,"label":re.sub(r"\\s+"," ",label).strip()[:180],
+            visible.append({"index":i,"label":re.sub(r"\s+"," ",label).strip()[:180],
                             "type":field.get_attribute("type") or field.evaluate("(el)=>el.tagName.toLowerCase()"),
                             "name":field.get_attribute("name") or ""})
         except Exception: continue
@@ -68,7 +68,7 @@ def _suggest_answers(page, profile):
               json.dumps(_profile_facts(profile),ensure_ascii=False) +
               "\nVISIBLE_FIELDS="+json.dumps(visible,ensure_ascii=False))
     raw = get_client().ask(prompt, temperature=0, max_tokens=1200)
-    match = re.search(r"\\{[\\s\\S]*\\}", raw)
+    match = re.search(r"\{[\s\S]*\}", raw)
     if not match: return {}
     data = json.loads(match.group(0))
     return {str(k):str(v) for k,v in data.items()
@@ -117,7 +117,7 @@ def run_browser_apply(limit=1,min_score=8,max_age_days=14,max_score=None,
             parsed=urlparse(url)
             if parsed.scheme not in {"http","https"} or not parsed.netloc:
                 log.warning("Skipping invalid application URL: %s",url); continue
-            print(f"\\n{job.get('title') or 'Untitled'} — {job.get('company') or parsed.netloc} (score {job.get('fit_score')})")
+            print(f"\n{job.get('title') or 'Untitled'} — {job.get('company') or parsed.netloc} (score {job.get('fit_score')})")
             print(url)
             if dry_run:
                 print(f"DRY RUN: would open; resume={job.get('tailored_resume_path')}"); continue
