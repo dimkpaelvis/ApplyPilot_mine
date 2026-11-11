@@ -181,7 +181,7 @@ def run(
 @app.command()
 def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
-    workers: int = typer.Option(5, "--workers", "-w", help="Number of parallel browser workers."),
+    workers: int = typer.Option(5, "--workers", "-w", help="Reserved for compatibility; the Playwright review flow is sequential."),
     min_score: int = typer.Option(
         config.DEFAULTS["min_score"], "--min-score",
         help=f"Minimum fit score for job selection (default: {config.DEFAULTS['min_score']}).",
@@ -195,7 +195,7 @@ def apply(
         ),
     ),
     max_score: Optional[int] = typer.Option(None, "--max-score", help="Maximum fit score for job selection (useful for testing on lower-score jobs)."),
-    model: str = typer.Option("sonnet", "--model", "-m", help="Claude model name (sonnet | haiku | opus)."),
+    model: str = typer.Option("gemini-2.5-flash", "--model", "-m", help="Gemini model identifier used by the configured LLM client."),
     continuous: bool = typer.Option(False, "--continuous", "-c", help="Run forever, polling for new jobs."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview actions without submitting."),
     headless: bool = typer.Option(False, "--headless", help="Run browsers in headless mode."),
@@ -219,7 +219,7 @@ def apply(
     from applypilot.config import check_tier, PROFILE_PATH as _profile_path
     from applypilot.database import get_connection
 
-    # --- Utility modes (no Chrome/Claude needed) ---
+    # --- Utility modes (no browser agent required) ---
 
     if mark_applied:
         from applypilot.apply.launcher import mark_job
@@ -303,24 +303,8 @@ def apply(
             raise typer.Exit(code=1)
 
     if gen:
-        from applypilot.apply.launcher import gen_prompt
-        target = url or ""
-        if not target:
-            console.print("[red]--gen requires --url to specify which job.[/red]")
-            raise typer.Exit(code=1)
-        prompt_file = gen_prompt(target, min_score=min_score, max_score=max_score, model=model)
-        if not prompt_file:
-            console.print("[red]No matching job found for that URL.[/red]")
-            raise typer.Exit(code=1)
-        mcp_path = _profile_path.parent / ".mcp-apply-0.json"
-        console.print(f"[green]Wrote prompt to:[/green] {prompt_file}")
-        console.print("\n[bold]Run manually:[/bold]")
-        console.print(
-            f"  claude --model {model} -p "
-            f"--mcp-config {mcp_path} "
-            f"--permission-mode bypassPermissions < {prompt_file}"
-        )
-        return
+        console.print("[red]--gen is deprecated: Claude prompt generation has been removed.[/red]")
+        raise typer.Exit(code=1)
 
     from applypilot.apply.browser_agent import run_browser_apply
 
@@ -328,7 +312,7 @@ def apply(
 
     console.print("\n[bold blue]Launching Auto-Apply[/bold blue]")
     console.print(f"  Limit:    {'unlimited' if continuous else effective_limit}")
-    console.print(f"  Workers:  {workers}")
+    console.print("  Workers:  1 (sequential review)")
     console.print(f"  Model:    {model}")
     console.print(f"  Headless: {headless}")
     console.print(f"  Dry run:  {dry_run}")
