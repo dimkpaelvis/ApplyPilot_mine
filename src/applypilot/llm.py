@@ -243,10 +243,12 @@ class LLMClient:
                            temperature: float, max_tokens: int,
                            is_last: bool = False) -> str | None:
         """Try an OpenAI-compatible endpoint (Gemini, OpenAI, local)."""
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {entry.api_key}",
-        }
+        headers = {"Content-Type": "application/json"}
+        if entry.provider == "gemini":
+            # Google AI Studio API keys are accepted through x-goog-api-key.
+            headers["x-goog-api-key"] = entry.api_key
+        elif entry.api_key:
+            headers["Authorization"] = f"Bearer {entry.api_key}"
         # DeepSeek deepseek-chat has an 8192 max output token limit
         if entry.provider == "deepseek":
             max_tokens = min(max_tokens, 8192)
