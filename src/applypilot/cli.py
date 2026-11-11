@@ -181,7 +181,7 @@ def run(
 @app.command()
 def apply(
     limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Max applications to submit."),
-    workers: int = typer.Option(5, "--workers", "-w", help="Reserved for compatibility; the Playwright review flow is sequential."),
+    workers: int = typer.Option(1, "--workers", "-w", help="Compatibility option; only one browser session is supported."),
     min_score: int = typer.Option(
         config.DEFAULTS["min_score"], "--min-score",
         help=f"Minimum fit score for job selection (default: {config.DEFAULTS['min_score']}).",
@@ -276,6 +276,11 @@ def apply(
     from applypilot.scoring.pdf import VALID_DOC_FORMATS as _valid_fmts
     if doc_format not in _valid_fmts:
         console.print(f"[red]Invalid --doc-format:[/red] '{doc_format}'. Must be one of: {', '.join(_valid_fmts)}")
+        raise typer.Exit(code=1)
+
+    # Reject legacy modes that no longer have a meaningful Playwright implementation.
+    if continuous or no_hitl or fresh_sessions or no_focus or workers != 1:
+        console.print("[red]Continuous mode, no-HITL, Chrome session import, focus controls, and parallel workers are not supported by the new Playwright agent.[/red]")
         raise typer.Exit(code=1)
 
     # Native Playwright agent replaces the Claude Code browser subprocess.
