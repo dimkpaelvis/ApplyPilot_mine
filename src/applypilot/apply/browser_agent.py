@@ -54,7 +54,6 @@ def _profile_facts(profile):
     personal = profile.get("personal", {})
     return {"personal": {k:v for k,v in personal.items()
                          if k not in {"password","job_site_password","ssn","national_id"}},
-            "work_authorization": profile.get("work_authorization", {}),
             "availability": profile.get("availability", {}),
             "experience": profile.get("experience", {}),
             "skills_boundary": profile.get("skills_boundary", {})}
@@ -124,6 +123,10 @@ def run_browser_apply(limit=1,min_score=8,max_age_days=14,max_score=None,
     profile=json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     if not isinstance(profile, dict):
         raise ValueError("The profile must be a JSON object. Re-run applypilot init and review profile.json.")
+    verified = input("Have you reviewed profile.json and confirmed every personal, work-history and availability fact is accurate? Type PROFILE VERIFIED: ").strip()
+    if verified != "PROFILE VERIFIED":
+        print("Stopped. Review profile.json before using application assistance.")
+        return 0
     placeholders = _placeholder_paths(profile)
     if placeholders:
         raise ValueError("Template values remain in profile.json and must be replaced before applying: "
