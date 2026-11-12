@@ -85,14 +85,13 @@ def remote_country_allowed(
         # Only accept a country from a description when it is tied to explicit
         # work-location language; incidental office/customer mentions do not count.
         context_pattern = (
-            r"\\b(?:remote(?:ly)?\\s+(?:in|from|within)|based\\s+in|located\\s+in|"
-            r"reside\\s+in|residing\\s+in|work\\s+from|must\\s+be\\s+based\\s+in)\\s+"
-            r"(?:the\\s+)?" + country_pattern + r"(?![a-z])"
+            r"\b(?:remote(?:ly)?\s+(?:in|from|within)|based\s+in|located\s+in|"
+            r"reside\s+in|residing\s+in|work\s+from|must\s+be\s+based\s+in)\s+"
+            r"(?:the\s+)?" + country_pattern + r"(?![a-z])"
         )
         if description_text and re.search(context_pattern, description_text):
             return True
     return False
-
 def _clean(value: Any) -> str:
     if value is None:
         return ""
