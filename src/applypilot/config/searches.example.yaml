@@ -49,17 +49,12 @@ location_reject_non_remote:
   - "onsite only"
   - "on-site only"
 
-# Indeed's country selector remains UK-scoped; LinkedIn remote searches may return other allowlisted markets.
-# Other sources are filtered against allowed_remote_countries using the listing's stated location.
-country: "UK"
-
-# JobSpy source boards (all available options shown)
-boards:
+# JobSpy source names consumed by the current discovery runner.
+# Indeed remains country-scoped by country_indeed below; LinkedIn is searched
+# with the broad Remote location and then checked against the country allowlist.
+sites:
   - indeed
   - linkedin
-  - glassdoor
-  - zip_recruiter
-  - google
 
 # Search defaults
 defaults:
