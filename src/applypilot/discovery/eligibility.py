@@ -48,8 +48,10 @@ def configured_remote_countries() -> tuple[str, ...]:
         return DEFAULT_ALLOWED_REMOTE_COUNTRIES
 
 
-def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool:
-    """Return True only when the listing location names an allowed country."""
+def remote_country_allowed(
+    location: Any, allowed_countries: Any = None, description: Any = None
+) -> bool:
+    """Require an allowlisted country in the location or explicit work-location wording."""
     if allowed_countries is None:
         allowed_values = configured_remote_countries()
     elif isinstance(allowed_countries, str):
@@ -58,9 +60,7 @@ def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool
         allowed_values = tuple(allowed_countries)
     if not allowed_values:
         return True
-    text = _clean(location)
-    if not text:
-        return False
+
     allowed_terms = set()
     for configured in allowed_values:
         configured_name = str(configured).strip().casefold()
@@ -76,12 +76,22 @@ def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool
             # Custom country names are supported without requiring a code change.
             allowed_terms.add(str(configured).strip())
 
+    location_text = _clean(location)
+    description_text = _clean(description)
     for term in allowed_terms:
-        pattern = r"(?<![a-z])" + re.escape(term.casefold()) + r"(?![a-z])"
-        if re.search(pattern, text):
+        country_pattern = re.escape(term.casefold())
+        if location_text and re.search(r"(?<![a-z])" + country_pattern + r"(?![a-z])", location_text):
+            return True
+        # Only accept a country from a description when it is tied to explicit
+        # work-location language; incidental office/customer mentions do not count.
+        context_pattern = (
+            r"\\b(?:remote(?:ly)?\\s+(?:in|from|within)|based\\s+in|located\\s+in|"
+            r"reside\\s+in|residing\\s+in|work\\s+from|must\\s+be\\s+based\\s+in)\\s+"
+            r"(?:the\\s+)?" + country_pattern + r"(?![a-z])"
+        )
+        if description_text and re.search(context_pattern, description_text):
             return True
     return False
-
 
 def _clean(value: Any) -> str:
     if value is None:
