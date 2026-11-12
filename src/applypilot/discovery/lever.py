@@ -119,6 +119,8 @@ def scrape_one_employer(
             "employer_name": name,
             "employer_slug": slug,
             "posted_at": posted_at,
+            "employment_type": (posting.get("categories") or {}).get("commitment") or "",
+            "workplace_type": posting.get("workplaceType") or "",
         })
     return out, None
 
