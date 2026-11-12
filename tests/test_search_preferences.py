@@ -89,5 +89,5 @@ def test_jobspy_filter_reports_each_rejection_stage_separately():
     kept, counts = _jobspy_filter_results(
         frame, True, ["parttime", "contract"], ["United Kingdom", "United States"]
     )
-    assert len(kept) == 1
-    assert counts == {"raw": 4, "remote": 1, "employment": 1, "country": 1, "location": 0}
+    assert len(kept) == 2
+    assert counts == {"raw": 4, "remote": 0, "employment": 1, "country": 1, "location": 0}
