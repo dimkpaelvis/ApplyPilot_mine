@@ -122,36 +122,36 @@ def normalize_workplace_type(value: Any = None, is_remote: Any = None,
     loc = _clean(location)
     desc = _clean(description)
     remote_flag = _clean(is_remote)
-    # Explicit hybrid/on-site evidence always wins. Explicit remote wording
-    # in the listing's location also outranks a contradictory generic boolean:
-    # some aggregators populate is_remote inconsistently. A false flag without
-    # explicit remote wording remains unverified and cannot pass the gate.
     location_text = f"{loc} {raw}"
+
+    # Explicit hybrid/on-site evidence from any source outranks a generic
+    # remote boolean or remote label. This prevents contradictory listings
+    # such as "Remote - UK" plus "hybrid role" from passing the gate.
     if "hybrid" in raw or any(term in location_text for term in _HYBRID_TERMS):
         return "hybrid"
+    if re.search(r"\b(hybrid role|hybrid position|office attendance|days in the office)\b", desc):
+        return "hybrid"
+
     if raw in {"on-site", "onsite", "office", "in-person", "in person", "in-office"}:
         return "onsite"
     if any(term in location_text for term in _ONSITE_TERMS):
         return "onsite"
+    if re.search(r"\b(on[- ]site role|on[- ]site position|must work from our office|office based role)\b", desc):
+        return "onsite"
+
+    # Explicit remote wording can correct a contradictory aggregator boolean.
     if raw in {"remote", "fully remote", "fully-remote", "distributed"}:
         return "remote"
     if any(term in location_text for term in _REMOTE_TERMS):
         return "remote"
-    # Description fallback only uses explicit workplace phrases, not incidental
-    # mentions such as "we support remote teams". Explicit hybrid/on-site text
-    # still outranks the aggregator's generic remote flag.
-    if re.search(r"\b(hybrid role|hybrid position|office attendance|days in the office)\b", desc):
-        return "hybrid"
-    if re.search(r"\b(on[- ]site role|on[- ]site position|must work from our office|office based role)\b", desc):
-        return "onsite"
     if re.search(r"\b(fully remote|this is a remote role|remote position|work remotely|100% remote)\b", desc):
         return "remote"
+
     if remote_flag in {"true", "1", "yes"}:
         return "remote"
     if remote_flag in {"false", "0", "no"}:
         return "unknown"
     return "unknown"
-
 
 def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = None,
                              require_remote: bool = True) -> dict:
