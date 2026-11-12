@@ -6,12 +6,61 @@ work-authorisation determination.
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from typing import Any
 
 _ALLOWED_EMPLOYMENT = {"part_time", "contract"}
 _REMOTE_TERMS = ("remote", "work from home", "work-from-home", "wfh", "distributed", "anywhere")
 _ONSITE_TERMS = ("on-site", "onsite", "in-person", "in person", "office-based", "office based")
 _HYBRID_TERMS = ("hybrid",)
+
+# Core English-speaking remote-work markets. Edit allowed_remote_countries in
+# ~/.applypilot/searches.yaml to expand or narrow this list.
+DEFAULT_ALLOWED_REMOTE_COUNTRIES = (
+    "United Kingdom", "Ireland", "United States", "Canada",
+    "Australia", "New Zealand", "South Africa", "Singapore",
+)
+_COUNTRY_ALIASES = {
+    "United Kingdom": ("United Kingdom", "UK", "Great Britain", "England", "Scotland", "Wales", "Northern Ireland"),
+    "Ireland": ("Ireland", "Republic of Ireland"),
+    "United States": ("United States", "United States of America", "USA", "US", "U.S.", "America"),
+    "Canada": ("Canada",),
+    "Australia": ("Australia",),
+    "New Zealand": ("New Zealand",),
+    "South Africa": ("South Africa",),
+    "Singapore": ("Singapore",),
+}
+
+
+@lru_cache(maxsize=1)
+def configured_remote_countries() -> tuple[str, ...]:
+    """Read the user's remote-country allowlist once per process."""
+    try:
+        from applypilot.config import load_search_config
+        cfg = load_search_config() or {}
+        countries = cfg.get("allowed_remote_countries", DEFAULT_ALLOWED_REMOTE_COUNTRIES)
+        return tuple(str(country).strip() for country in countries if str(country).strip())
+    except Exception:
+        return DEFAULT_ALLOWED_REMOTE_COUNTRIES
+
+
+def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool:
+    """Return True only when the listing location names an allowed country."""
+    allowed_values = configured_remote_countries() if allowed_countries is None else tuple(allowed_countries)
+    if not allowed_values:
+        return True
+    text = _clean(location)
+    if not text:
+        return False
+    allowed = {str(country).strip().casefold() for country in allowed_values}
+    for canonical, aliases in _COUNTRY_ALIASES.items():
+        if canonical.casefold() not in allowed:
+            continue
+        for alias in aliases:
+            pattern = r"(?<![a-z])" + re.escape(alias.casefold()) + r"(?![a-z])"
+            if re.search(pattern, text):
+                return True
+    return False
 
 
 def _clean(value: Any) -> str:
@@ -107,6 +156,10 @@ def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = No
         reasons.append("workplace_type_unverified")
     elif require_remote and workplace != "remote":
         reasons.append(f"workplace_type_{workplace}")
+    elif require_remote and not remote_country_allowed(job.get("location")):
+        # A generic "Remote" label does not establish the country in which
+        # the employer permits the worker to be based. Fail closed.
+        reasons.append("remote_country_unverified_or_out_of_scope")
     return {
         "employment_type": employment,
         "workplace_type": workplace,
