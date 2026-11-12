@@ -331,9 +331,8 @@ def _run_one_search(
     gd_location = glassdoor_map.get(s["location"], s["location"].split(",")[0])
     has_glassdoor = "glassdoor" in sites
     effective_sites = [si for si in sites if si != "glassdoor"]
-    # Indeed may infer the wrong country from the scraper's exit IP on remote searches.
-    if remote_only and "indeed" in effective_sites:
-        effective_sites = [si for si in effective_sites if si != "indeed"]
+    # Indeed is retained for remote searches because country_indeed is
+    # explicitly set to UK in the request below; do not infer from proxy IP.
     other_sites = effective_sites
 
     all_dfs = []
