@@ -29,5 +29,5 @@ jobs:
       - name: Lint eligibility engine and focused tests
         run: ruff check src/applypilot/discovery/eligibility.py
 
-      - name: Test
+      - name: Full regression suite (all discovery and application tests)
         run: pytest tests/ -v
