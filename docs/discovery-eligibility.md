@@ -49,4 +49,6 @@ Across the shared discovery eligibility gate, remote listings must also identify
 
 This is a search-scope preference only. It does not establish that an employer permits cross-border remote work or that the applicant has legal work authorisation in that country. Review both in the full posting before applying.
 
+Job-board coverage is not uniform: the current JobSpy Indeed connector remains UK-scoped (`country_indeed: uk`), while LinkedIn's broad remote search may return other allowlisted markets. Direct ATS sources are also constrained by their configured employer registries. The allowlist controls which discovered listings can enter the pipeline; it does not guarantee exhaustive coverage of every listed country.
+
 JobSpy logs now report raw results and disjoint rejection counts for remote status, employment type, country scope and (for non-remote searches) location. Diagnostic samples contain only public listing fields: title, board, location, job type and remote flag. HTTP 429 responses remain source-side rate limits; ApplyPilot does not attempt to bypass them.
