@@ -92,6 +92,8 @@ def remote_country_allowed(
         if description_text and re.search(context_pattern, description_text):
             return True
     return False
+
+
 def _clean(value: Any) -> str:
     if value is None:
         return ""
