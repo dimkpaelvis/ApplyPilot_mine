@@ -10,7 +10,7 @@ rule-based pre-filter.
 import pytest
 
 from applypilot.database import current_state
-from applypilot.scoring.scorer import _check_ineligible, _flush_score_batch, _parse_score_response
+from applypilot.scoring.scorer import _check_ineligible, _flush_score_batch, _parse_score_response, score_job
 
 
 def _job(title="Junior Data Analyst", location="Remote - United Kingdom", description="UK-based role."):
@@ -152,3 +152,78 @@ def test_noneligible_or_missing_scoring_decision_is_archived(tmp_db, seed_job, e
     ).fetchone()
     assert row[0] == (eligibility or "unverified")
     assert row[1] == "rejected"
+
+
+
+def test_score_job_rejects_unknown_employment_and_workplace_before_llm(monkeypatch):
+    from applypilot.scoring import scorer
+
+    def unexpected_llm_call():
+        pytest.fail("LLM must not score an unverified listing")
+
+    monkeypatch.setattr(scorer, "get_client", unexpected_llm_call)
+    result = score_job(
+        "resume text",
+        {"title": "Data Analyst", "site": "Example", "location": "London, UK",
+         "full_description": "Data analysis role."},
+        profile={},
+    )
+    assert result["eligibility"] == "unverified"
+    assert result["score"] == 1
+
+
+def test_score_job_rejects_full_time_before_llm(monkeypatch):
+    from applypilot.scoring import scorer
+
+    monkeypatch.setattr(
+        scorer, "get_client",
+        lambda: pytest.fail("LLM must not score a full-time listing"),
+    )
+    result = score_job(
+        "resume text",
+        {"title": "Data Analyst", "site": "Example", "location": "Remote",
+         "employment_type": "full_time", "workplace_type": "remote",
+         "full_description": "Full-time remote data analyst role."},
+        profile={},
+    )
+    assert result["eligibility"] == "full_time_only"
+
+
+def test_score_job_rejects_hybrid_before_llm(monkeypatch):
+    from applypilot.scoring import scorer
+
+    monkeypatch.setattr(
+        scorer, "get_client",
+        lambda: pytest.fail("LLM must not score a hybrid listing"),
+    )
+    result = score_job(
+        "resume text",
+        {"title": "Part-time Data Analyst", "site": "Example",
+         "employment_type": "part_time", "workplace_type": "hybrid",
+         "location": "Hybrid - UK", "full_description": "Part-time hybrid role."},
+        profile={},
+    )
+    assert result["eligibility"] == "non_remote_only"
+
+
+def test_score_job_allows_verified_remote_part_time_to_llm(monkeypatch):
+    from applypilot.scoring import scorer
+
+    class FakeClient:
+        def chat(self, *args, **kwargs):
+            return (
+                "ELIGIBILITY: eligible\\nSCORE: 8\\nKEYWORDS: SQL\\n"
+                "REASONING: Remote part-time role matches the candidate."
+            )
+
+    monkeypatch.setattr(scorer, "get_client", FakeClient)
+    result = score_job(
+        "resume text",
+        {"title": "Part-time Data Analyst", "site": "Example",
+         "employment_type": "part_time", "workplace_type": "remote",
+         "location": "Remote - United Kingdom",
+         "full_description": "Part-time remote data analyst role."},
+        profile={},
+    )
+    assert result["eligibility"] == "eligible"
+    assert result["score"] == 8
