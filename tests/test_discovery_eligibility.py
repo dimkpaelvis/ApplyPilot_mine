@@ -202,3 +202,30 @@ def test_jobspy_store_filters_and_persists_normalized_fields(db):
         "SELECT employment_type, workplace_type, eligibility_status FROM jobs"
     ).fetchone()
     assert row == ("part_time", "remote", "eligible")
+
+
+
+def test_workday_detail_fields_flow_into_normalized_storage(monkeypatch, db):
+    detail = {
+        "jobPostingInfo": {
+            "jobDescription": "<p>Part-time remote data analyst position.</p>",
+            "externalUrl": "https://jobs.example/workday/detail",
+            "timeType": "Part Time",
+            "remoteType": "Remote",
+            "startDate": "2026-11-10",
+        }
+    }
+    monkeypatch.setattr(workday, "workday_detail", lambda *args, **kwargs: detail)
+    job = {
+        "external_path": "/job/123",
+        "location": "Remote - United Kingdom",
+        "employer_name": "Example",
+    }
+    normalized = workday._fetch_one_detail({"name": "Example"}, job)
+    assert normalized["time_type"] == "Part Time"
+    assert normalized["remote_type"] == "Remote"
+    assert workday.store_results(db, [normalized], {}) == (1, 0)
+    row = db.execute(
+        "SELECT employment_type, workplace_type FROM jobs"
+    ).fetchone()
+    assert row == ("part_time", "remote")
