@@ -39,14 +39,14 @@ def test_resume_path_honours_explicit_environment_override(tmp_path, monkeypatch
 def test_load_resume_text_reads_configured_path(tmp_path, monkeypatch):
     resume = tmp_path / "master_cv.md"
     resume.write_text("# Candidate\nSQL and Python", encoding="utf-8")
-    monkeypatch.setattr(config, "RESUME_PATH", resume)
+    monkeypatch.setattr(config, "APP_DIR", tmp_path)
 
     assert config.load_resume_text() == "# Candidate\nSQL and Python"
 
 
 def test_load_resume_text_rejects_missing_file(tmp_path, monkeypatch):
     missing = tmp_path / "missing.md"
-    monkeypatch.setattr(config, "RESUME_PATH", missing)
+    monkeypatch.setattr(config, "APP_DIR", tmp_path)
 
     with pytest.raises(FileNotFoundError, match="Master resume not found"):
         config.load_resume_text()
@@ -55,7 +55,7 @@ def test_load_resume_text_rejects_missing_file(tmp_path, monkeypatch):
 def test_load_resume_text_rejects_empty_file(tmp_path, monkeypatch):
     empty = tmp_path / "empty.md"
     empty.write_text("  \n", encoding="utf-8")
-    monkeypatch.setattr(config, "RESUME_PATH", empty)
+    monkeypatch.setattr(config, "APP_DIR", tmp_path)
 
     with pytest.raises(ValueError, match="is empty"):
         config.load_resume_text()
@@ -64,7 +64,7 @@ def test_load_resume_text_rejects_empty_file(tmp_path, monkeypatch):
 def test_load_resume_text_rejects_non_utf8_file(tmp_path, monkeypatch):
     invalid = tmp_path / "invalid.txt"
     invalid.write_bytes(b"\xff\xfe")
-    monkeypatch.setattr(config, "RESUME_PATH", invalid)
+    monkeypatch.setattr(config, "APP_DIR", tmp_path)
 
     with pytest.raises(ValueError, match="not valid UTF-8"):
         config.load_resume_text()
