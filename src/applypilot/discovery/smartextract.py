@@ -32,6 +32,7 @@ from patchright.sync_api import sync_playwright
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import init_db, get_stats, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -115,16 +116,23 @@ def _store_jobs_filtered(
             if not _location_ok(job.get("location"), accept_locs, reject_locs):
                 counts["filtered"] += 1
                 continue
+            eligibility = classify_job_eligibility(job, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                counts["filtered"] += 1
+                continue
             description = job.get("description")
             initial_state = "enriched" if description and len(description) > 200 else "discovered"
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                    "discovered_at, posted_at, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "discovered_at, posted_at, state, employment_type, workplace_type, "
+                    "eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), job.get("salary"), description,
                      job.get("location"), site, strategy, now,
-                     job.get("posted_at"), initial_state),
+                     job.get("posted_at"), initial_state, eligibility["employment_type"],
+                     eligibility["workplace_type"], eligibility["eligibility_status"],
+                     eligibility["eligibility_reason"]),
                 )
                 conn.execute(
                     "INSERT INTO job_state_transitions "
