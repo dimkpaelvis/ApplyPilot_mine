@@ -11,7 +11,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
-from applypilot.config import RESUME_PATH, load_profile
+from applypilot.config import load_profile, load_resume_text
 from applypilot.database import get_connection, get_jobs_by_stage, write_with_retry
 from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.matching import evaluate_job_match
@@ -316,7 +316,7 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = load_resume_text()
     conn = get_connection()
 
     if rescore:
