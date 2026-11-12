@@ -12,7 +12,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from applypilot.config import load_env
@@ -127,6 +127,7 @@ def test_connection(service=None, spreadsheet_id: str | None = None) -> str:
     """Verify API write access using a temporary tab, then remove that tab."""
     service = service or _build_service()
     spreadsheet_id = spreadsheet_id or _spreadsheet_id()
+    from googleapiclient.errors import HttpError
     tab = "_ApplyPilot_Test_" + uuid.uuid4().hex[:12]
     sheet_id = _ensure_tab(service, spreadsheet_id, tab)
     quoted = _quote_tab(tab)
@@ -149,7 +150,7 @@ def test_connection(service=None, spreadsheet_id: str | None = None) -> str:
                 spreadsheetId=spreadsheet_id,
                 body={"requests": [{"deleteSheet": {"sheetId": sheet_id}}]},
             ).execute()
-        except Exception:
+        except HttpError:
             log.warning("Could not remove temporary Google Sheets test tab %s.", tab)
 
     metadata = service.spreadsheets().get(
@@ -210,7 +211,7 @@ def import_review_decisions(conn=None, service=None, spreadsheet_id: str | None 
 
     changed = 0
     ignored = 0
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     for row in values[1:]:
         url = str(row[0]).strip() if row else ""
         if not url:
@@ -231,12 +232,12 @@ def import_review_decisions(conn=None, service=None, spreadsheet_id: str | None 
         if old_decision == decision and old_notes == notes:
             continue
 
-        def _update():
-            conn.execute(
-                "UPDATE jobs SET review_decision = ?, review_notes = ?, reviewed_at = ? WHERE url = ?",
-                (decision, notes, now, url),
-            )
-        write_with_retry(conn, _update)
+        write_with_retry(
+            conn,
+            conn.execute,
+            "UPDATE jobs SET review_decision = ?, review_notes = ?, reviewed_at = ? WHERE url = ?",
+            (decision, notes, now, url),
+        )
         changed += 1
 
     return {"updated": changed, "ignored": ignored}
