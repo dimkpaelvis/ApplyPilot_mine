@@ -26,6 +26,8 @@ This creates a uniquely named temporary tab, writes and clears a test cell, then
 ```bash
 applypilot sheets-sync --dry-run
 applypilot sheets-sync
+# Or run the normal pipeline and sync the sheet at the end:
+applypilot run --sync-sheets
 ```
 
 The default tab is `Job Review`; override it with `--tab "My Review Tab"`.
