@@ -420,11 +420,11 @@ def search_jobs(
     query: str,
     location: str,
     sites: list[str] | None = None,
-    remote_only: bool = False,
+    remote_only: bool = True,
     results_per_site: int = 50,
     hours_old: int = 72,
     proxy: str | None = None,
-    country_indeed: str = "usa",
+    country_indeed: str = "uk",
 ) -> dict:
     """Run a single job search via JobSpy and store results in DB."""
     if sites is None:
@@ -437,34 +437,50 @@ def search_jobs(
 
     log.info("Search: \"%s\" in %s | sites=%s | remote=%s", query, location, sites, remote_only)
 
-    kwargs = {
-        "site_name": sites,
-        "search_term": query,
-        "location": location,
-        "results_wanted": results_per_site,
-        "hours_old": hours_old,
-        "description_format": "markdown",
-        "country_indeed": country_indeed,
-        "verbose": 2,
-    }
+    job_types = _normalise_job_types(["parttime", "contract"])
+    all_dfs = []
+    for job_type in job_types:
+        kwargs = {
+            "site_name": sites,
+            "search_term": query,
+            "location": location,
+            "results_wanted": results_per_site,
+            "hours_old": hours_old,
+            "description_format": "markdown",
+            "country_indeed": country_indeed,
+            "job_type": job_type,
+            "verbose": 2,
+        }
 
+        if remote_only:
+            kwargs["is_remote"] = True
+
+        if proxy_config:
+            kwargs["proxies"] = [proxy_config["jobspy"]]
+
+        if "linkedin" in sites:
+            kwargs["linkedin_fetch_description"] = True
+
+        try:
+            df = scrape_jobs(**kwargs)
+            if df is not None and len(df):
+                all_dfs.append(df)
+        except Exception as e:
+            log.error("JobSpy search failed for %s: %s", job_type, e)
+
+    if not all_dfs:
+        return {"total": 0, "new": 0, "existing": 0}
+
+    import pandas as pd
+    df = pd.concat(all_dfs, ignore_index=True) if len(all_dfs) > 1 else all_dfs[0]
     if remote_only:
-        kwargs["is_remote"] = True
-
-    if proxy_config:
-        kwargs["proxies"] = [proxy_config["jobspy"]]
-
-    if "linkedin" in sites:
-        kwargs["linkedin_fetch_description"] = True
-
-    try:
-        df = scrape_jobs(**kwargs)
-    except Exception as e:
-        log.error("JobSpy search failed: %s", e)
-        return {"error": str(e), "total": 0, "new": 0, "existing": 0}
+        df = df[df.apply(_remote_result_ok, axis=1)]
+    df = df[df.apply(
+        lambda row: _employment_type_ok(row, job_types), axis=1
+    )]
 
     total = len(df)
-    log.info("JobSpy returned %d results", total)
+    log.info("JobSpy returned %d matching remote part-time/contract results", total)
 
     if total == 0:
         return {"total": 0, "new": 0, "existing": 0}
