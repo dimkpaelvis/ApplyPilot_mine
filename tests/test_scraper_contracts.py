@@ -241,6 +241,7 @@ def test_smartextract_insert_creates_initial_transition(tmp_db):
         "url": "https://company.com/jobs/senior-engineer",
         "title": "Senior Engineer",
         "location": "Remote",
+        "employment_type": "parttime",
         "description": "An amazing opportunity at our company. " * 10,  # > 200 chars
         "salary": None,
     }]
