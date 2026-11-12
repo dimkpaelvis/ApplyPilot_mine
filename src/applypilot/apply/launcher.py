@@ -703,7 +703,7 @@ def _start_worker_listener(worker_id: int, no_hitl: bool = False) -> int:
                     WHERE fit_score IS NOT NULL AND fit_score >= 6
                       AND (apply_status IS NULL
                            OR apply_status NOT IN ('applied', 'manual', 'in_progress'))
-                      AND (eligibility = 'eligible' AND j.eligibility_status = 'eligible')
+                      AND (eligibility = 'eligible' AND eligibility_status = 'eligible')
                     ORDER BY fit_score DESC, discovered_at DESC
                     LIMIT ?
                 """, (limit,)).fetchall()
