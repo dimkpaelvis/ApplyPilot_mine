@@ -85,6 +85,12 @@ def test_remote_country_allowlist_accepts_aliases_and_rejects_unknown():
     assert _remote_country_ok("Remote - Nigeria", ["Nigeria"])
     assert not _remote_country_ok("Remote - Germany", allowed)
     assert not _remote_country_ok("Remote / Worldwide", allowed)
+    assert _remote_country_ok(
+        "Remote", allowed, "Applicants must be based in the United States."
+    )
+    assert not _remote_country_ok(
+        "Remote", allowed, "Our offices are in the United States and Canada."
+    )
 
 
 def test_jobspy_filter_reports_each_rejection_stage_separately():
