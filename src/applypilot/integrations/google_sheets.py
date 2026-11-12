@@ -246,10 +246,6 @@ def sync_to_sheet(conn=None, service=None, spreadsheet_id: str | None = None,
                   tab: str = "Job Review", dry_run: bool = False) -> dict:
     """Upsert all evaluated jobs into the review tab without overwriting reviewer cells."""
     conn = conn or get_connection()
-    service = service or _build_service()
-    spreadsheet_id = spreadsheet_id or _spreadsheet_id()
-    _ensure_tab(service, spreadsheet_id, tab)
-
     jobs = conn.execute(
         """
         SELECT url, title, company, location, employment_type, workplace_type,
@@ -265,6 +261,9 @@ def sync_to_sheet(conn=None, service=None, spreadsheet_id: str | None = None,
     if dry_run:
         return {"eligible_rows": len(jobs), "updated": 0, "appended": 0, "dry_run": True}
 
+    service = service or _build_service()
+    spreadsheet_id = spreadsheet_id or _spreadsheet_id()
+    sheet_id = _ensure_tab(service, spreadsheet_id, tab)
     quoted = _quote_tab(tab)
     current = service.spreadsheets().values().get(
         spreadsheetId=spreadsheet_id,
@@ -325,7 +324,6 @@ def sync_to_sheet(conn=None, service=None, spreadsheet_id: str | None = None,
         ).execute()
 
     # Constrain reviewer decisions to the documented values.
-    sheet_id = _ensure_tab(service, spreadsheet_id, tab)
     service.spreadsheets().batchUpdate(
         spreadsheetId=spreadsheet_id,
         body={"requests": [{
