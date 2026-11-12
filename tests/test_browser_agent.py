@@ -53,3 +53,60 @@ def test_real_profile_values_are_not_flagged():
     }
 
     assert _placeholder_paths(profile) == []
+
+
+def test_manual_review_job_requires_explicit_sheet_approval(tmp_db, seed_job, monkeypatch):
+    from applypilot.apply import browser_agent
+
+    conn = tmp_db()
+    row = seed_job(
+        conn,
+        decision_route="manual_review",
+        review_decision=None,
+        eligibility="eligible",
+        eligibility_status="eligible",
+        applicant_eligibility="eligible",
+        candidate_suitability="suitable",
+    )
+    monkeypatch.setattr(browser_agent, "get_connection", lambda: conn)
+
+    pending = browser_agent._load_jobs(10, 8, 0, None, None)
+    assert pending == []
+
+    conn.execute(
+        "UPDATE jobs SET review_decision = 'approved' WHERE url = ?",
+        (row["url"],),
+    )
+    conn.commit()
+
+    approved = browser_agent._load_jobs(10, 8, 0, None, None)
+    assert len(approved) == 1
+    assert approved[0]["url"] == row["url"]
+
+
+def test_auto_apply_queue_requires_auto_apply_qualification(tmp_db, seed_job, monkeypatch):
+    from applypilot.apply import browser_agent
+
+    conn = tmp_db()
+    row = seed_job(
+        conn,
+        decision_route="auto_apply_queue",
+        auto_apply_qualified=0,
+        eligibility="eligible",
+        eligibility_status="eligible",
+        applicant_eligibility="eligible",
+        candidate_suitability="suitable",
+    )
+    monkeypatch.setattr(browser_agent, "get_connection", lambda: conn)
+
+    assert browser_agent._load_jobs(10, 8, 0, None, None) == []
+
+    conn.execute(
+        "UPDATE jobs SET auto_apply_qualified = 1 WHERE url = ?",
+        (row["url"],),
+    )
+    conn.commit()
+
+    approved = browser_agent._load_jobs(10, 8, 0, None, None)
+    assert len(approved) == 1
+    assert approved[0]["url"] == row["url"]
