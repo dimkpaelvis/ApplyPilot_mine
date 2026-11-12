@@ -52,9 +52,10 @@ def normalize_workplace_type(value: Any = None, is_remote: Any = None,
     raw = _clean(value)
     loc = _clean(location)
     desc = _clean(description)
-    if isinstance(is_remote, bool):
-        if is_remote:
-            return "remote"
+    remote_flag = _clean(is_remote)
+    if remote_flag in {"true", "1", "yes"}:
+        return "remote"
+    if remote_flag in {"false", "0", "no"}:
         if raw in {"hybrid", "hybrid remote"}:
             return "hybrid"
         if raw in {"on-site", "onsite", "office", "in-person", "in person"}:
