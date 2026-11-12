@@ -8,6 +8,7 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 """
 
 import logging
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -149,6 +150,83 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
     # No match -- reject unknown
     return False
+
+
+# -- Remote-country scope ----------------------------------------------------
+
+_COUNTRY_ALIASES = {
+    "United Kingdom": ("United Kingdom", "UK", "Great Britain", "England", "Scotland", "Wales", "Northern Ireland"),
+    "Ireland": ("Ireland", "Republic of Ireland"),
+    "United States": ("United States", "United States of America", "USA", "US", "U.S.", "America"),
+    "Canada": ("Canada",),
+    "Australia": ("Australia",),
+    "New Zealand": ("New Zealand",),
+    "South Africa": ("South Africa",),
+    "Singapore": ("Singapore",),
+}
+
+
+def _remote_country_ok(location: str | None, allowed_countries: list[str] | None) -> bool:
+    """Require a positively identified allowed country for remote listings.
+
+    A generic "Remote" or "Worldwide" location is not enough to establish
+    country eligibility. This is a search-scope filter, not work-authorisation
+    verification. Country matching is boundary-aware to avoid matching e.g.
+    "US" inside unrelated words.
+    """
+    if not allowed_countries:
+        return True  # preserve legacy configs until the user opts into a country scope
+    text = str(location or "").strip()
+    if not text or text.lower() in {"nan", "none", "unknown"}:
+        return False
+
+    allowed = {str(country).strip().casefold() for country in allowed_countries if str(country).strip()}
+    for canonical, aliases in _COUNTRY_ALIASES.items():
+        if canonical.casefold() not in allowed:
+            continue
+        for alias in aliases:
+            pattern = r"(?<![a-z])" + re.escape(alias.casefold()) + r"(?![a-z])"
+            if re.search(pattern, text.casefold()):
+                return True
+    return False
+
+
+def _jobspy_filter_results(
+    df,
+    remote_only: bool,
+    job_types: list[str],
+    allowed_remote_countries: list[str] | None = None,
+    accept_locs: list[str] | None = None,
+    reject_locs: list[str] | None = None,
+):
+    """Apply filters in sequence and return disjoint rejection counts."""
+    remaining = df.copy()
+    counts = {"raw": len(remaining), "remote": 0, "employment": 0, "country": 0, "location": 0}
+
+    if remote_only:
+        mask = remaining.apply(_remote_result_ok, axis=1)
+        counts["remote"] = int((~mask).sum())
+        remaining = remaining[mask]
+
+    mask = remaining.apply(lambda row: _employment_type_ok(row, job_types), axis=1)
+    counts["employment"] = int((~mask).sum())
+    remaining = remaining[mask]
+
+    if remote_only and allowed_remote_countries:
+        mask = remaining.apply(
+            lambda row: _remote_country_ok(row.get("location"), allowed_remote_countries), axis=1
+        )
+        counts["country"] = int((~mask).sum())
+        remaining = remaining[mask]
+    elif not remote_only:
+        mask = remaining.apply(lambda row: _location_ok(
+            str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
+            accept_locs or [], reject_locs or [],
+        ), axis=1)
+        counts["location"] = int((~mask).sum())
+        remaining = remaining[mask]
+
+    return remaining, counts
 
 def _normalise_job_types(values) -> list[str]:
     """Map user-facing job types to JobSpy's supported type values."""
@@ -402,31 +480,39 @@ def _run_one_search(
         log.info("[%s] 0 results", label)
         return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": label}
 
-    # Enforce remote-only and part-time/contract preferences before storing.
-    before = len(df)
+    # Apply each gate separately so rejected results are attributable.
     remote_only = bool(defaults.get("remote_only", True)) or bool(s.get("remote"))
     job_types = _normalise_job_types(defaults.get("employment_types", ["parttime", "contract"]))
-    if remote_only:
-        df = df[df.apply(_remote_result_ok, axis=1)]
-    df = df[df.apply(lambda row: _employment_type_ok(row, job_types), axis=1)]
-    # In remote-only mode, the remote flag is authoritative; do not reject a
-    # verified remote role just because the board reports its eligible region.
-    if not remote_only:
-        df = df[df.apply(lambda row: _location_ok(
-            str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
-            accept_locs, reject_locs,
-        ), axis=1)]
-    filtered = before - len(df)
+    allowed_countries = defaults.get("allowed_remote_countries", [])
+    raw_df = df.copy()
+    df, rejection_counts = _jobspy_filter_results(
+        raw_df, remote_only, job_types, allowed_countries, accept_locs, reject_locs
+    )
+    filtered = sum(rejection_counts[k] for k in ("remote", "employment", "country", "location"))
 
     conn = get_connection()
     new, existing = store_jobspy_results(conn, df, s["query"])
 
-    msg = f"[{label}] {before} results -> {new} new, {existing} dupes"
+    log.info(
+        "[%s] raw=%d | rejected remote=%d employment=%d country=%d location=%d "
+        "| eligible_candidates=%d | inserted=%d duplicates=%d",
+        label, rejection_counts["raw"], rejection_counts["remote"],
+        rejection_counts["employment"], rejection_counts["country"],
+        rejection_counts["location"], len(df), new, existing,
+    )
     if filtered:
-        msg += f", {filtered} filtered (location)"
-    log.info(msg)
+        rejected = raw_df.head(3)
+        for _, sample in rejected.iterrows():
+            log.info(
+                "[%s] diagnostic sample title=%r site=%r location=%r job_type=%r is_remote=%r",
+                label, sample.get("title"), sample.get("site"), sample.get("location"),
+                sample.get("job_type"), sample.get("is_remote"),
+            )
 
-    return {"new": new, "existing": existing, "errors": 0, "filtered": filtered, "total": before, "label": label}
+    return {
+        "new": new, "existing": existing, "errors": 0, "filtered": filtered,
+        "total": rejection_counts["raw"], "rejections": rejection_counts, "label": label,
+    }
 
 
 # -- Single query search -----------------------------------------------------
@@ -538,7 +624,11 @@ def _full_crawl(
     # Build search combinations from config
     queries = search_cfg.get("queries", [])
     locs = search_cfg.get("locations", [])
-    defaults = search_cfg.get("defaults", {})
+    defaults = dict(search_cfg.get("defaults", {}) or {})
+    # Country scope is top-level so it is easy to review and edit in searches.yaml.
+    defaults["allowed_remote_countries"] = search_cfg.get(
+        "allowed_remote_countries", defaults.get("allowed_remote_countries", [])
+    )
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
     accept_locs, reject_locs = _load_location_config(search_cfg)
 
