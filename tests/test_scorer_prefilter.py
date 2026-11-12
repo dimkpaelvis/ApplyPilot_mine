@@ -9,7 +9,8 @@ rule-based pre-filter.
 
 import pytest
 
-from applypilot.scoring.scorer import _check_ineligible, _parse_score_response
+from applypilot.database import current_state
+from applypilot.scoring.scorer import _check_ineligible, _flush_score_batch, _parse_score_response
 
 
 def _job(title="Junior Data Analyst", location="Remote - United Kingdom", description="UK-based role."):
@@ -127,3 +128,27 @@ KEYWORDS: SQL
 REASONING: Employment type and workplace type are not confirmed."""
     parsed = _parse_score_response(response)
     assert parsed["eligibility"] == "unverified"
+
+
+
+@pytest.mark.parametrize("eligibility", ["full_time_only", "non_remote_only", "non_uk_only", "unverified", None])
+def test_noneligible_or_missing_scoring_decision_is_archived(tmp_db, seed_job, eligibility):
+    conn = tmp_db()
+    url = seed_job(conn, url_suffix=f"score-gate-{eligibility or 'missing'}")["url"]
+    result = {
+        "url": url,
+        "score": 9,
+        "keywords": "SQL",
+        "reasoning": "Skills align, but eligibility is not acceptable.",
+    }
+    if eligibility is not None:
+        result["eligibility"] = eligibility
+
+    _flush_score_batch(conn, [result], "2026-11-12T00:00:00+00:00")
+
+    assert current_state(conn, url) == "archived"
+    row = conn.execute(
+        "SELECT eligibility, eligibility_status FROM jobs WHERE url = ?", (url,)
+    ).fetchone()
+    assert row[0] == (eligibility or "unverified")
+    assert row[1] == "rejected"
