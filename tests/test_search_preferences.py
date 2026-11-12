@@ -23,9 +23,13 @@ def test_full_time_and_unrequested_types_are_rejected(job_type):
     assert not _employment_type_ok(pd.Series({"job_type": job_type}), ["parttime", "contract"])
 
 
-@pytest.mark.parametrize("job_type", ["parttime", "part-time", "contract", "freelance", None])
+@pytest.mark.parametrize("job_type", ["parttime", "part-time", "contract", "freelance"])
 def test_requested_work_types_are_kept(job_type):
     assert _employment_type_ok(pd.Series({"job_type": job_type}), ["parttime", "contract"])
+
+
+def test_unknown_employment_type_is_rejected():
+    assert not _employment_type_ok(pd.Series({"job_type": None}), ["parttime", "contract"])
 
 
 def test_remote_flag_must_not_be_false():
@@ -42,3 +46,11 @@ def test_remote_location_is_kept_when_flag_missing():
 
 def test_unknown_nonremote_location_is_rejected():
     assert not _remote_result_ok(pd.Series({"location": "London, UK"}))
+
+
+def test_missing_workplace_information_is_rejected():
+    assert not _remote_result_ok(pd.Series({"location": None, "is_remote": None}))
+
+
+def test_explicit_false_remote_flag_overrides_remote_text():
+    assert not _remote_result_ok(pd.Series({"location": "Remote - UK", "is_remote": False}))
