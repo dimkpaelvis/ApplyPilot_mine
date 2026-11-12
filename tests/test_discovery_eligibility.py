@@ -5,16 +5,15 @@ the shared pre-insert/database path without depending on third-party uptime.
 """
 import sqlite3
 
+import pandas as pd
 import pytest
 
+from applypilot.discovery import ashby, ats_common, greenhouse, jobspy, lever, workday
 from applypilot.discovery.eligibility import (
     classify_job_eligibility,
     normalize_employment_type,
     normalize_workplace_type,
 )
-from applypilot.discovery import ats_common, greenhouse, lever, ashby, workday, jobspy
-import pandas as pd
-
 
 @pytest.fixture
 def db():
