@@ -26,6 +26,7 @@ import httpx
 
 from applypilot import config
 from applypilot.database import init_db, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
