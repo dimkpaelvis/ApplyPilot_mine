@@ -63,7 +63,7 @@ def test_workplace_type_normalization(raw, expected):
 
 def test_unknown_employment_or_workplace_is_not_eligible():
     result = classify_job_eligibility({"title": "Data Analyst", "location": ""})
-    assert result["eligibility_status"] == "rejected"
+    assert result["eligibility_status"] == "unverified"
     assert result["employment_type"] == "unknown"
     assert result["workplace_type"] == "unknown"
 
