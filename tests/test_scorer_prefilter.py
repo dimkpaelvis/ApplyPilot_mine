@@ -214,7 +214,7 @@ def test_score_job_allows_verified_remote_part_time_to_llm(monkeypatch):
     class FakeClient:
         def chat(self, *args, **kwargs):
             return (
-                "ELIGIBILITY: eligible\\nSCORE: 8\\nKEYWORDS: SQL\\n"
+                "ELIGIBILITY: eligible\nSCORE: 8\nKEYWORDS: SQL\n"
                 "REASONING: Remote part-time role matches the candidate."
             )
 
