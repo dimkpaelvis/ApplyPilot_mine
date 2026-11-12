@@ -63,7 +63,7 @@ boards:
 
 # Search defaults
 defaults:
-  results_per_site: 100
+  results_per_site: 30
   hours_old: 72
   country_indeed: "uk"
   remote_only: true
