@@ -1601,7 +1601,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
             "full_description IS NOT NULL AND ("
             "  (fit_score IS NULL AND score_error IS NULL) "
             "  OR (score_error IS NOT NULL AND score_attempts < 5 "
-            "      AND (score_next_retry_at IS NULL OR score_next_retry_at <= datetime('now')))"
+            "      AND (score_next_retry_at IS NULL OR julianday(score_next_retry_at) <= julianday('now')))"
             ")"
         ),
         "scored": "fit_score IS NOT NULL",
@@ -1642,7 +1642,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
     # Age filter: only active when max_age_days > 0.
     # NULL discovered_at is excluded because `col > val` is NULL (→ falsy in WHERE).
     if max_age_days > 0:
-        where += " AND discovered_at > datetime('now', ?)"
+        where += " AND julianday(discovered_at) > julianday('now', ?)"
         params.append(f"-{max_age_days} days")
 
     query = f"""
