@@ -6,6 +6,10 @@
 # Tier 1: High-priority exact matches (searched first, highest precision)
 # Tier 2: Strong matches, broader scope
 # Tier 3: Wide net, high volume, lower precision
+locations:
+  - location: "Remote - United Kingdom"
+    remote: true
+
 queries:
   - query: "junior data analyst"
     tier: 1
