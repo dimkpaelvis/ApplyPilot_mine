@@ -94,11 +94,10 @@ def test_parser_accepts_bracketed_non_uk_only_label():
     assert parsed["eligibility"] == "non_uk_only"
 
 
-def test_parser_missing_eligibility_defaults_to_eligible():
-    response = "SCORE: 8\nKEYWORDS: SQL, Python\nREASONING: Good match."
+def test_parser_missing_eligibility_defaults_to_unverified():
+    response = "SCORE: 8\\nKEYWORDS: SQL, Python\\nREASONING: Good match."
     parsed = _parse_score_response(response)
-    assert parsed["eligibility"] == "eligible"
-
+    assert parsed["eligibility"] == "unverified"
 
 
 def test_parser_extracts_full_time_only():
