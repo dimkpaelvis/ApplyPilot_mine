@@ -252,3 +252,24 @@ def test_acquire_falls_back_to_higher_score_when_in_flight_tied(
     job = acquire_job(min_score=8, max_age_days=0)
     assert job is not None
     assert job["url"].endswith("/beta-10")
+
+
+
+def test_acquire_rejects_unverified_eligibility(tmp_db, seed_job, monkeypatch):
+    """Direct apply queue must not treat legacy NULL eligibility as eligible."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="unverified",
+        application_url="https://boards.greenhouse.io/acme/jobs/unverified",
+        apply_status=None,
+        fit_score=10,
+        eligibility=None,
+        eligibility_status="unverified",
+        employment_type="unknown",
+        workplace_type="unknown",
+    )
+
+    assert acquire_job(min_score=8, max_age_days=0) is None
