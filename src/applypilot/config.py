@@ -39,24 +39,26 @@ RESUME_PATH = resolve_resume_path()
 
 def load_resume_text() -> str:
     """Load and validate the master resume without exposing its contents in logs."""
-    if not RESUME_PATH.is_file():
+    # Resolve at call time so values loaded from ~/.applypilot/.env are honoured.
+    path = resolve_resume_path()
+    if not path.is_file():
         raise FileNotFoundError(
-            f"Master resume not found at {RESUME_PATH}. "
+            f"Master resume not found at {path}. "
             "Place your private CV at ~/.applypilot/master_cv.md or "
             "~/.applypilot/resume.txt, or set APPLYPILOT_RESUME_PATH."
         )
 
     try:
-        resume_text = RESUME_PATH.read_text(encoding="utf-8")
+        resume_text = path.read_text(encoding="utf-8")
     except UnicodeDecodeError as exc:
         raise ValueError(
-            f"Master resume at {RESUME_PATH} is not valid UTF-8 text. "
+            f"Master resume at {path} is not valid UTF-8 text. "
             "Use a plain-text or Markdown CV; PDF files must be converted to text first."
         ) from exc
 
     if not resume_text.strip():
         raise ValueError(
-            f"Master resume at {RESUME_PATH} is empty. Add your resume content before scoring."
+            f"Master resume at {path} is empty. Add your resume content before scoring."
         )
     return resume_text
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
