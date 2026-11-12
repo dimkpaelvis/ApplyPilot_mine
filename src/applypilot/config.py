@@ -11,7 +11,54 @@ APP_DIR = Path(os.environ.get("APPLYPILOT_DIR", Path.home() / ".applypilot"))
 # Core paths
 DB_PATH = APP_DIR / "applypilot.db"
 PROFILE_PATH = APP_DIR / "profile.json"
-RESUME_PATH = APP_DIR / "resume.txt"
+def resolve_resume_path(app_dir: Path | None = None) -> Path:
+    """Resolve the private master resume path.
+
+    Precedence:
+      1. APPLYPILOT_RESUME_PATH, when explicitly configured.
+      2. Existing ~/.applypilot/resume.txt (legacy installations).
+      3. Existing ~/.applypilot/master_cv.md.
+      4. The legacy resume.txt path, so missing-file errors remain predictable.
+    """
+    override = os.environ.get("APPLYPILOT_RESUME_PATH")
+    if override:
+        return Path(override).expanduser()
+
+    directory = app_dir or APP_DIR
+    legacy_path = directory / "resume.txt"
+    markdown_path = directory / "master_cv.md"
+    if legacy_path.is_file():
+        return legacy_path
+    if markdown_path.is_file():
+        return markdown_path
+    return legacy_path
+
+
+RESUME_PATH = resolve_resume_path()
+
+
+def load_resume_text() -> str:
+    """Load and validate the master resume without exposing its contents in logs."""
+    if not RESUME_PATH.is_file():
+        raise FileNotFoundError(
+            f"Master resume not found at {RESUME_PATH}. "
+            "Place your private CV at ~/.applypilot/master_cv.md or "
+            "~/.applypilot/resume.txt, or set APPLYPILOT_RESUME_PATH."
+        )
+
+    try:
+        resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(
+            f"Master resume at {RESUME_PATH} is not valid UTF-8 text. "
+            "Use a plain-text or Markdown CV; PDF files must be converted to text first."
+        ) from exc
+
+    if not resume_text.strip():
+        raise ValueError(
+            f"Master resume at {RESUME_PATH} is empty. Add your resume content before scoring."
+        )
+    return resume_text
 RESUME_PDF_PATH = APP_DIR / "resume.pdf"
 SEARCH_CONFIG_PATH = APP_DIR / "searches.yaml"
 ENV_PATH = APP_DIR / ".env"
