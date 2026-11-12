@@ -8,7 +8,6 @@ search configuration YAML (searches.yaml) rather than being hardcoded.
 """
 
 import logging
-import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -52,7 +51,12 @@ except Exception:
 
 from applypilot import config
 from applypilot.database import get_connection, init_db, write_with_retry
-from applypilot.discovery.eligibility import normalize_employment_type, normalize_workplace_type, classify_job_eligibility
+from applypilot.discovery.eligibility import (
+    classify_job_eligibility,
+    normalize_employment_type,
+    normalize_workplace_type,
+    remote_country_allowed,
+)
 
 log = logging.getLogger(__name__)
 
@@ -154,41 +158,10 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
 # -- Remote-country scope ----------------------------------------------------
 
-_COUNTRY_ALIASES = {
-    "United Kingdom": ("United Kingdom", "UK", "Great Britain", "England", "Scotland", "Wales", "Northern Ireland"),
-    "Ireland": ("Ireland", "Republic of Ireland"),
-    "United States": ("United States", "United States of America", "USA", "US", "U.S.", "America"),
-    "Canada": ("Canada",),
-    "Australia": ("Australia",),
-    "New Zealand": ("New Zealand",),
-    "South Africa": ("South Africa",),
-    "Singapore": ("Singapore",),
-}
-
-
 def _remote_country_ok(location: str | None, allowed_countries: list[str] | None) -> bool:
-    """Require a positively identified allowed country for remote listings.
+    """Require a positively identified country from the configured allowlist."""
+    return remote_country_allowed(location, allowed_countries)
 
-    A generic "Remote" or "Worldwide" location is not enough to establish
-    country eligibility. This is a search-scope filter, not work-authorisation
-    verification. Country matching is boundary-aware to avoid matching e.g.
-    "US" inside unrelated words.
-    """
-    if not allowed_countries:
-        return True  # preserve legacy configs until the user opts into a country scope
-    text = str(location or "").strip()
-    if not text or text.lower() in {"nan", "none", "unknown"}:
-        return False
-
-    allowed = {str(country).strip().casefold() for country in allowed_countries if str(country).strip()}
-    for canonical, aliases in _COUNTRY_ALIASES.items():
-        if canonical.casefold() not in allowed:
-            continue
-        for alias in aliases:
-            pattern = r"(?<![a-z])" + re.escape(alias.casefold()) + r"(?![a-z])"
-            if re.search(pattern, text.casefold()):
-                return True
-    return False
 
 
 def _jobspy_filter_results(
@@ -501,7 +474,7 @@ def _run_one_search(
         rejection_counts["location"], len(df), new, existing,
     )
     if filtered:
-        rejected = raw_df.head(3)
+        rejected = raw_df.loc[~raw_df.index.isin(df.index)].head(3)
         for _, sample in rejected.iterrows():
             log.info(
                 "[%s] diagnostic sample title=%r site=%r location=%r job_type=%r is_remote=%r",
