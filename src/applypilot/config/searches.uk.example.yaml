@@ -5,7 +5,7 @@ defaults:
   location: "Remote"
   distance: 0
   hours_old: 72
-  results_per_site: 50
+  results_per_site: 30
 
 locations:
   - location: "Remote"
