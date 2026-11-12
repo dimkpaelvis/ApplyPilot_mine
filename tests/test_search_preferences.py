@@ -7,6 +7,8 @@ from applypilot.discovery.jobspy import (
     _employment_type_ok,
     _normalise_job_types,
     _remote_result_ok,
+    _remote_country_ok,
+    _jobspy_filter_results,
 )
 
 
@@ -54,3 +56,25 @@ def test_missing_workplace_information_is_rejected():
 
 def test_explicit_false_remote_flag_overrides_remote_text():
     assert not _remote_result_ok(pd.Series({"location": "Remote - UK", "is_remote": False}))
+
+
+def test_remote_country_allowlist_accepts_aliases_and_rejects_unknown():
+    allowed = ["United Kingdom", "United States"]
+    assert _remote_country_ok("Remote - UK", allowed)
+    assert _remote_country_ok("Remote - USA", allowed)
+    assert not _remote_country_ok("Remote - Germany", allowed)
+    assert not _remote_country_ok("Remote / Worldwide", allowed)
+
+
+def test_jobspy_filter_reports_each_rejection_stage_separately():
+    frame = pd.DataFrame([
+        {"title": "Part-time Analyst", "job_type": "parttime", "is_remote": True, "location": "Remote - UK"},
+        {"title": "Full-time Analyst", "job_type": "fulltime", "is_remote": True, "location": "Remote - UK"},
+        {"title": "Part-time Analyst", "job_type": "parttime", "is_remote": False, "location": "Remote - UK"},
+        {"title": "Contract Analyst", "job_type": "contract", "is_remote": True, "location": "Remote - Germany"},
+    ])
+    kept, counts = _jobspy_filter_results(
+        frame, True, ["parttime", "contract"], ["United Kingdom", "United States"]
+    )
+    assert len(kept) == 1
+    assert counts == {"raw": 4, "remote": 1, "employment": 1, "country": 1, "location": 0}
