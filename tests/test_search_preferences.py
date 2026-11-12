@@ -54,8 +54,12 @@ def test_missing_workplace_information_is_rejected():
     assert not _remote_result_ok(pd.Series({"location": None, "is_remote": None}))
 
 
-def test_explicit_false_remote_flag_overrides_remote_text():
-    assert not _remote_result_ok(pd.Series({"location": "Remote - UK", "is_remote": False}))
+def test_explicit_remote_location_overrides_conflicting_false_flag():
+    assert _remote_result_ok(pd.Series({"location": "Remote - UK", "is_remote": False}))
+
+
+def test_false_remote_flag_without_explicit_remote_evidence_is_rejected():
+    assert not _remote_result_ok(pd.Series({"location": "London, UK", "is_remote": False}))
 
 
 def test_remote_country_allowlist_accepts_aliases_and_rejects_unknown():
