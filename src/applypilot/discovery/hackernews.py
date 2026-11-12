@@ -210,6 +210,15 @@ def _store_hn_job(
 
     # HN comments are always the full text — enrich immediately when present.
     initial_state = "enriched" if description else "discovered"
+    eligibility = classify_job_eligibility({
+        **job,
+        "title": title,
+        "location": location,
+        "description": description,
+        "is_remote": job.get("remote"),
+    }, require_remote=True)
+    if eligibility["eligibility_status"] != "eligible":
+        return False
 
     integrity_failed = {"v": False}
 
@@ -218,10 +227,13 @@ def _store_hn_job(
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                "discovered_at, posted_at, full_description, detail_scraped_at, state) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "discovered_at, posted_at, full_description, detail_scraped_at, state, "
+                "employment_type, workplace_type, eligibility_status, eligibility_reason) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location,
-                 f"HN: {company}", "hackernews", now, posted_at, description, now, initial_state),
+                 f"HN: {company}", "hackernews", now, posted_at, description, now, initial_state,
+                 eligibility["employment_type"], eligibility["workplace_type"],
+                 eligibility["eligibility_status"], eligibility["eligibility_reason"]),
             )
             conn.execute(
                 "INSERT INTO job_state_transitions "
