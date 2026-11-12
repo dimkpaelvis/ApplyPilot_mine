@@ -159,9 +159,11 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
 
 # -- Remote-country scope ----------------------------------------------------
 
-def _remote_country_ok(location: str | None, allowed_countries: list[str] | None) -> bool:
+def _remote_country_ok(
+    location: str | None, allowed_countries: list[str] | None, description: str | None = None
+) -> bool:
     """Require a positively identified country from the configured allowlist."""
-    return remote_country_allowed(location, allowed_countries)
+    return remote_country_allowed(location, allowed_countries, description)
 
 
 
@@ -188,7 +190,7 @@ def _jobspy_filter_results(
 
     if remote_only and allowed_remote_countries:
         mask = remaining.apply(
-            lambda row: _remote_country_ok(row.get("location"), allowed_remote_countries), axis=1
+            lambda row: _remote_country_ok(row.get("location"), allowed_remote_countries, row.get("description")), axis=1
         )
         counts["country"] = int((~mask).sum())
         remaining = remaining[mask]
