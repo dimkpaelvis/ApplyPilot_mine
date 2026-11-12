@@ -218,13 +218,13 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
             eligibility = r.get("eligibility") or "eligible"
             conn.execute(
                 "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ?, "
-                "eligibility = ?, "
+                "eligibility = ?, eligibility_status = ?, eligibility_reason = ?, "
                 "score_error = NULL, score_attempts = 0, score_next_retry_at = NULL "
                 "WHERE url = ?",
-                (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
-                 r["url"]),
-            )
-            if eligibility != "eligible":
+                (r["score"], f"{r['keywords']}\\n{r['reasoning']}", now, eligibility,
+                 "eligible" if eligibility == "eligible" else "rejected",
+                 None if eligibility == "eligible" else eligibility, r["url"]),
+            )            if eligibility != "eligible":
                 transition_state(conn, r["url"], "archived",
                                  reason=f"ineligible or unverified: {eligibility}",
                                  metadata={"score": r["score"],
