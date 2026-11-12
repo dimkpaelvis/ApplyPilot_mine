@@ -210,8 +210,8 @@ def _parse_score_response(response: str) -> dict:
         if line.startswith("ELIGIBILITY:"):
             value = line.replace("ELIGIBILITY:", "").strip().lower()
             value = re.sub(r"[\[\]\s]+", "_", value).strip("_")
-            if "non" in value and "us" in value:
-                eligibility = "non_us_only"
+            if "non" in value and ("uk" in value or "us" in value):
+                eligibility = "non_uk_only"
             else:
                 eligibility = "eligible"
         elif line.startswith("SCORE:"):
@@ -230,22 +230,23 @@ def _parse_score_response(response: str) -> dict:
 
 
 def _build_candidate_summary(profile: dict) -> str:
-    """Build a candidate summary string from profile for the scoring prompt."""
+    """Build a concise candidate summary using both supported profile layouts."""
     exp = profile.get("experience", {})
     boundary = profile.get("skills_boundary", {})
-    years = exp.get("years_of_experience_total", "several")
-    current_title = exp.get("current_job_title", "Software Engineer")
-    target = exp.get("target_role", "Software Engineer")
-    languages = boundary.get("languages", [])
-    platforms = boundary.get("platforms", [])
+    years = exp.get("years_of_experience_total") or "early-career"
+    current_title = exp.get("current_job_title") or exp.get("current_title") or "Early-career data professional"
+    targets = profile.get("target_roles") or [exp.get("target_role") or "Data Analyst"]
+    languages = boundary.get("languages") or boundary.get("programming_languages") or []
+    platforms = list(boundary.get("platforms") or [])
+    platforms += boundary.get("databases") or []
+    platforms += boundary.get("tools") or []
     parts = [f"{current_title} with {years} years experience."]
     if languages:
-        parts.append(f"Primary stack: {', '.join(languages[:8])}.")
+        parts.append(f"Languages: {', '.join(languages[:8])}.")
     if platforms:
-        parts.append(f"Platforms: {', '.join(platforms[:6])}.")
-    parts.append(f"Targets: {target}.")
+        parts.append(f"Platforms and tools: {', '.join(platforms[:10])}.")
+    parts.append(f"Target roles: {', '.join(targets[:8])}.")
     return " ".join(parts)
-
 
 def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
     """Score a single job against the resume.
