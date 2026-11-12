@@ -25,8 +25,11 @@ SCORE_PROMPT_TEMPLATE = """You are a rigorous UK-focused recruiter assessing a c
 CANDIDATE PROFILE:
 {candidate_summary}
 
-GEOGRAPHY AND ELIGIBILITY:
-The candidate is based in Sheerness, Kent, United Kingdom. Prefer roles explicitly open to applicants based in the UK, UK-remote roles, or roles whose location is not restricted. Do NOT mark a job ineligible merely because it is outside the United States or because it mentions UK right-to-work checks. Mark ELIGIBILITY: non_uk_only only when the posting clearly restricts hiring to a different country or region and excludes UK-based applicants. If unclear, use eligible and explain the uncertainty. This eligibility label is about location only; it does not establish the candidate's right to work or visa status.
+LOCATION AND ELIGIBILITY:
+The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If location eligibility is unclear, use eligible and explain the uncertainty.
+
+EMPLOYMENT TYPE:
+The candidate wants PART-TIME and FREELANCE/CONTRACT work. Full-time roles are not suitable and must be marked ELIGIBILITY: full_time_only when the posting explicitly identifies the role as full-time. Treat freelance, freelancer, independent contractor and contract engagements as contract work. Do not mistake a full-time role's mention of flexible hours, remote work, or a part-time team member for a part-time vacancy. If employment type is not stated, do not assume it is part-time; explain that the type needs confirmation and score conservatively. This eligibility label does not establish the candidate's right to work or visa status.
 
 TARGET ROLE FAMILIES:
 - Junior / entry-level Data Analyst
@@ -46,6 +49,7 @@ SCORING:
 
 ASSESSMENT RULES:
 - Evaluate junior and entry-level roles positively when the candidate's evidence aligns. Do not penalise a candidate simply for being early-career.
+- Remote + part-time or freelance/contract is a hard preference, not a bonus. Explicit full-time roles must receive ELIGIBILITY: full_time_only and a score of 1. Unknown employment type must be flagged as unconfirmed rather than represented as part-time.
 - Distinguish required skills from desirable skills.
 - Assess SQL, Excel, Python, pandas, MySQL, data cleaning, data validation, reconciliation, dashboards, reporting, ETL and data quality where relevant.
 - Do not assume commercial experience, production-scale engineering, cloud platforms, advanced statistics, degrees or certifications unless evidenced in the resume.
@@ -54,7 +58,7 @@ ASSESSMENT RULES:
 - Score the role's fit, not the employer's prestige.
 
 Return exactly these four lines:
-ELIGIBILITY: [eligible|non_uk_only]
+ELIGIBILITY: [eligible|non_uk_only|full_time_only]
 SCORE: [1-10]
 KEYWORDS: [comma-separated relevant ATS keywords that are genuinely supported or clearly adjacent to the candidate's evidence]
 REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions and any critical eligibility questions.]
@@ -93,7 +97,9 @@ def _parse_score_response(response: str) -> dict:
         if line.startswith("ELIGIBILITY:"):
             value = line.replace("ELIGIBILITY:", "").strip().lower()
             value = re.sub(r"[\[\]\s]+", "_", value).strip("_")
-            if value in {"non_uk_only", "non_us_only"} or (
+            if value in {"full_time_only", "fulltime_only", "full_time", "fulltime"}:
+                eligibility = "full_time_only"
+            elif value in {"non_uk_only", "non_us_only"} or (
                 value.startswith("non_") and ("uk" in value or "us" in value)
             ):
                 eligibility = "non_uk_only"
