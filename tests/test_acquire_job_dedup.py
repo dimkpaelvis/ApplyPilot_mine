@@ -296,3 +296,35 @@ def test_acquire_rejects_legacy_eligible_with_unverified_normalized_status(
     )
 
     assert acquire_job(min_score=8, max_age_days=0) is None
+
+
+def test_acquire_rejects_applicant_country_unverified(tmp_db, seed_job, monkeypatch):
+    """A job that passed discovery but has no proof of UK applicant eligibility is held."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="applicant-unverified",
+        application_url="https://boards.greenhouse.io/acme/jobs/applicant-unverified",
+        apply_status=None, fit_score=10,
+        applicant_eligibility="unverified",
+        candidate_suitability="suitable",
+    )
+    assert acquire_job(min_score=8, max_age_days=0) is None
+
+
+def test_acquire_rejects_unsuitable_candidate(tmp_db, seed_job, monkeypatch):
+    """A job with an explicit experience mismatch cannot reach application."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="candidate-unsuitable",
+        application_url="https://boards.greenhouse.io/acme/jobs/candidate-unsuitable",
+        apply_status=None, fit_score=10,
+        applicant_eligibility="eligible",
+        candidate_suitability="unsuitable",
+    )
+    assert acquire_job(min_score=8, max_age_days=0) is None
