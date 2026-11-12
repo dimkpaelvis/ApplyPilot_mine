@@ -62,6 +62,14 @@ def test_false_remote_flag_without_explicit_remote_evidence_is_rejected():
     assert not _remote_result_ok(pd.Series({"location": "London, UK", "is_remote": False}))
 
 
+def test_explicit_remote_description_overrides_conflicting_false_flag():
+    assert _remote_result_ok(pd.Series({
+        "location": "United Kingdom",
+        "description": "This is a fully remote role.",
+        "is_remote": False,
+    }))
+
+
 def test_remote_country_allowlist_accepts_aliases_and_rejects_unknown():
     allowed = ["United Kingdom", "United States"]
     assert _remote_country_ok("Remote - UK", allowed)
