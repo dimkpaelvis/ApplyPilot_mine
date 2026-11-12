@@ -74,6 +74,7 @@ def test_remote_country_allowlist_accepts_aliases_and_rejects_unknown():
     allowed = ["United Kingdom", "United States"]
     assert _remote_country_ok("Remote - UK", allowed)
     assert _remote_country_ok("Remote - USA", allowed)
+    assert _remote_country_ok("Remote - Nigeria", ["Nigeria"])
     assert not _remote_country_ok("Remote - Germany", allowed)
     assert not _remote_country_ok("Remote / Worldwide", allowed)
 
