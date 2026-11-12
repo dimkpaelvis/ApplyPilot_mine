@@ -57,7 +57,6 @@ def _build_fallback_chain(primary_model: str, quality: bool = False) -> list[Mod
     if quality:
         gemini_models = [
             "gemini-3.6-flash",
-            "gemini-3.6-flash",
             "gemini-3.5-flash",
         ]
     else:
