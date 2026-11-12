@@ -47,7 +47,8 @@ def test_jobspy_insert_creates_initial_transition(tmp_db):
         "job_url": "https://indeed.com/job/1",
         "title": "Engineer",
         "company": "Acme",
-        "location": "Remote",
+        "location": "Remote - United Kingdom",
+        "job_type": "parttime",
         "min_amount": None,
         "max_amount": None,
         "interval": None,
@@ -81,7 +82,8 @@ def test_jobspy_long_description_lands_in_enriched(tmp_db):
         "job_url": "https://linkedin.com/jobs/2",
         "title": "Staff Engineer",
         "company": "BigCo",
-        "location": "Seattle, WA",
+        "location": "Remote - United Kingdom",
+        "job_type": "contract",
         "min_amount": None,
         "max_amount": None,
         "interval": None,
@@ -117,8 +119,9 @@ def test_hackernews_insert_creates_initial_transition(tmp_db):
         "url": "https://example.com/hn-job",
         "title": "Backend Engineer",
         "company": "StartupCo",
-        "location": "Remote",
+        "location": "Remote - United Kingdom",
         "remote": True,
+        "employment_type": "parttime",
         "salary": "$150K-$200K",
         "description": "We are building the future. " * 20,  # long description
         "contact": None,
@@ -145,7 +148,9 @@ def test_hackernews_captures_posted_at(tmp_db):
         "url": "https://example.com/hn-job-dated",
         "title": "Platform Engineer",
         "company": "StartupCo",
-        "location": "Remote",
+        "location": "Remote - United Kingdom",
+        "remote": True,
+        "employment_type": "parttime",
         "description": "Building infra. " * 20,
     }
 
@@ -174,7 +179,9 @@ def test_costco_insert_creates_initial_transition(tmp_db):
     jobs = [{
         "url": "https://careers.costco.com/job/12345",
         "title": "Software Engineer",
-        "location": "Issaquah, WA",
+        "location": "Remote - United Kingdom",
+        "employment_type": "parttime",
+        "workplace_type": "remote",
         "description": "A great role.",
         "full_description": "We are looking for a software engineer " * 10,  # > 200 chars
         "application_url": "https://careers.costco.com/job/12345",
@@ -201,7 +208,9 @@ def test_costco_captures_posted_date_when_available(tmp_db):
     jobs = [{
         "url": "https://careers.costco.com/job/99999",
         "title": "Data Engineer",
-        "location": "Issaquah, WA",
+        "location": "Remote - United Kingdom",
+        "employment_type": "parttime",
+        "workplace_type": "remote",
         "description": "Role summary.",
         "full_description": "Looking for an experienced data engineer " * 10,
         "application_url": "https://careers.costco.com/job/99999",
@@ -261,7 +270,8 @@ def test_smartextract_stores_posted_at_when_present(tmp_db):
         {
             "url": "https://company.com/jobs/dated",
             "title": "Dated Role",
-            "location": "Remote",
+            "location": "Remote - United Kingdom",
+            "employment_type": "parttime",
             "description": "Long description. " * 20,
             "salary": None,
             "posted_at": "2026-05-30",
@@ -269,7 +279,8 @@ def test_smartextract_stores_posted_at_when_present(tmp_db):
         {
             "url": "https://company.com/jobs/undated",
             "title": "Undated Role",
-            "location": "Remote",
+            "location": "Remote - United Kingdom",
+            "employment_type": "parttime",
             "description": "Long description. " * 20,
             "salary": None,
         },
@@ -334,7 +345,9 @@ def test_workday_stores_posted_at_from_start_date(tmp_db):
     jobs = [
         {
             "title": "Software Engineer",
-            "location": "Seattle, WA",
+            "location": "Remote - United Kingdom",
+            "time_type": "Part Time",
+            "remote_type": "Remote",
             "apply_url": "https://corp.wd1.myworkdayjobs.com/jobs/SWE-1",
             "full_description": "We need a software engineer. " * 10,
             "posted_at": "2026-05-12",
@@ -343,7 +356,9 @@ def test_workday_stores_posted_at_from_start_date(tmp_db):
         },
         {
             "title": "Data Engineer",
-            "location": "Seattle, WA",
+            "location": "Remote - United Kingdom",
+            "time_type": "Part Time",
+            "remote_type": "Remote",
             "apply_url": "https://corp.wd1.myworkdayjobs.com/jobs/DE-1",
             "full_description": "We need a data engineer. " * 10,
             "employer_key": "corp",
