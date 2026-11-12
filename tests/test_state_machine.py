@@ -188,7 +188,19 @@ def test_pending_tailor_requires_explicit_eligibility(tmp_db, seed_job):
     )
     assert url not in {job["url"] for job in pending}
 
-    conn.execute("UPDATE jobs SET eligibility = 'eligible' WHERE url = ?", (url,))
+    conn.execute(
+        "UPDATE jobs SET eligibility = 'eligible', eligibility_status = 'unverified' WHERE url = ?",
+        (url,),
+    )
+    conn.commit()
+    pending = get_jobs_by_stage(
+        conn=conn, stage="pending_tailor", max_age_days=0,
+    )
+    assert url not in {job["url"] for job in pending}
+
+    conn.execute(
+        "UPDATE jobs SET eligibility_status = 'eligible' WHERE url = ?", (url,)
+    )
     conn.commit()
     pending = get_jobs_by_stage(
         conn=conn, stage="pending_tailor", max_age_days=0,
