@@ -55,3 +55,18 @@ def test_daily_unique_job_cap_can_be_disabled(tmp_db, monkeypatch):
 
     assert new == 3
     assert duplicates == 0
+
+def test_sheets_sync_dry_run_does_not_require_google_credentials(tmp_db, seed_job, monkeypatch):
+    from applypilot.integrations import google_sheets
+
+    conn = tmp_db()
+    seed_job(conn, decision_route="manual_review")
+
+    def should_not_build_service():
+        raise AssertionError("dry-run must not access Google")
+
+    monkeypatch.setattr(google_sheets, "_build_service", should_not_build_service)
+    result = google_sheets.sync_review_queue(conn=conn, dry_run=True)
+
+    assert result["eligible_rows"] == 1
+    assert result["dry_run"] is True
