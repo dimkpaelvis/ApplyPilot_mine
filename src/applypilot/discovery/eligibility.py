@@ -112,7 +112,7 @@ def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = No
         "workplace_type": workplace,
         "eligibility_status": (
             "eligible" if not reasons
-            else "unverified" if any(reason.endswith("_unverified") for reason in reasons)
+            else "unverified" if all(reason.endswith("_unverified") for reason in reasons)
             else "rejected"
         ),
         "eligibility_reason": ",".join(reasons) if reasons else None,
