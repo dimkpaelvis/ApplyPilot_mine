@@ -149,6 +149,51 @@ def _location_ok(location: str | None, accept: list[str], reject: list[str]) -> 
     # No match -- reject unknown
     return False
 
+def _normalise_job_types(values) -> list[str]:
+    """Map user-facing job types to JobSpy's supported type values."""
+    if isinstance(values, str):
+        values = [values]
+    aliases = {
+        "part-time": "parttime", "part time": "parttime",
+        "freelance": "contract", "contractor": "contract",
+    }
+    allowed = {"parttime", "contract"}
+    result = []
+    for value in values or ["parttime", "contract"]:
+        normalised = str(value).strip().lower().replace("_", " ")
+        normalised = aliases.get(normalised, normalised.replace(" ", ""))
+        if normalised not in allowed:
+            raise ValueError(
+                f"Unsupported employment type {value!r}. This search is restricted "
+                "to part-time and freelance/contract work."
+            )
+        if normalised not in result:
+            result.append(normalised)
+    return result
+
+
+def _remote_result_ok(row) -> bool:
+    """Reject results explicitly marked non-remote after a remote-only search."""
+    value = row.get("is_remote")
+    if value is not None and str(value).strip().lower() not in {"", "nan", "none"}:
+        if isinstance(value, bool):
+            return value
+        return str(value).strip().lower() in {"true", "1", "yes", "remote"}
+    location = str(row.get("location", "") or "").lower()
+    return any(term in location for term in (
+        "remote", "anywhere", "work from home", "wfh", "distributed"
+    )) or not location
+
+
+def _employment_type_ok(row, allowed_types: list[str]) -> bool:
+    """Reject explicit full-time or other disallowed types; unknowns rely on JobSpy's type filter."""
+    value = row.get("job_type")
+    if value is None or str(value).strip().lower() in {"", "nan", "none"}:
+        return True
+    normalised = str(value).strip().lower().replace("-", "").replace("_", "").replace(" ", "")
+    normalised = {"freelance": "contract", "contractor": "contract"}.get(normalised, normalised)
+    return normalised in allowed_types
+
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
 
@@ -262,66 +307,71 @@ def _run_one_search(
     if "tier" in s:
         label += f" [tier {s['tier']}]"
 
-    # Split sites: Glassdoor needs simplified location, others use original
+    # Apply the user's remote and work-type preferences at source level.
+    remote_only = bool(defaults.get("remote_only", True)) or bool(s.get("remote"))
+    job_types = _normalise_job_types(defaults.get("employment_types", ["parttime", "contract"]))
+
+    # Split sites: Glassdoor needs simplified location.
     gd_location = glassdoor_map.get(s["location"], s["location"].split(",")[0])
     has_glassdoor = "glassdoor" in sites
-    # Indeed auto-detects country from IP for remote searches, causing failures
-    # when the network exits through a non-USA IP. Skip Indeed for remote-only.
     effective_sites = [si for si in sites if si != "glassdoor"]
-    if s.get("remote") and "indeed" in effective_sites:
+    # Indeed may infer the wrong country from the scraper's exit IP on remote searches.
+    if remote_only and "indeed" in effective_sites:
         effective_sites = [si for si in effective_sites if si != "indeed"]
     other_sites = effective_sites
 
     all_dfs = []
 
-    # Run non-Glassdoor sites with original location
-    if other_sites:
-        kwargs = {
-            "site_name": other_sites,
-            "search_term": s["query"],
-            "location": s["location"],
-            "results_wanted": results_per_site,
-            "hours_old": hours_old,
-            "description_format": "markdown",
-            "verbose": 0,
-        }
-        # Only pass country_indeed when Indeed is actually in the site list;
-        # jobspy validates this param even if Indeed isn't being used, and
-        # may auto-detect a non-US country from the exit IP causing failures.
-        if "indeed" in other_sites:
-            kwargs["country_indeed"] = defaults.get("country_indeed", "usa")
-        if s.get("remote"):
-            kwargs["is_remote"] = True
-        if proxy_config:
-            kwargs["proxies"] = [proxy_config["jobspy"]]
-        if "linkedin" in other_sites:
-            kwargs["linkedin_fetch_description"] = True
-        try:
-            df = _scrape_with_retry(kwargs, max_retries=max_retries)
-            all_dfs.append(df)
-        except Exception as e:
-            log.error("[%s] (non-gd): %s", label, e)
+    # JobSpy accepts one job_type per request; run one request for each desired type.
+    for job_type in job_types:
+        if other_sites:
+            kwargs = {
+                "site_name": other_sites,
+                "search_term": s["query"],
+                "location": s["location"],
+                "results_wanted": results_per_site,
+                "hours_old": hours_old,
+                "description_format": "markdown",
+                "job_type": job_type,
+                "verbose": 0,
+            }
+            if "indeed" in other_sites:
+                kwargs["country_indeed"] = defaults.get("country_indeed", "uk")
+            if remote_only:
+                kwargs["is_remote"] = True
+            if proxy_config:
+                kwargs["proxies"] = [proxy_config["jobspy"]]
+            if "linkedin" in other_sites:
+                kwargs["linkedin_fetch_description"] = True
+            try:
+                df = _scrape_with_retry(kwargs, max_retries=max_retries)
+                if df is not None and len(df):
+                    all_dfs.append(df)
+            except Exception as e:
+                log.error("[%s] (non-gd, %s): %s", label, job_type, e)
 
-    # Run Glassdoor separately with simplified location
-    if has_glassdoor:
-        gd_kwargs = {
-            "site_name": ["glassdoor"],
-            "search_term": s["query"],
-            "location": gd_location,
-            "results_wanted": results_per_site,
-            "hours_old": hours_old,
-            "description_format": "markdown",
-            "verbose": 0,
-        }
-        if s.get("remote"):
-            gd_kwargs["is_remote"] = True
-        if proxy_config:
-            gd_kwargs["proxies"] = [proxy_config["jobspy"]]
-        try:
-            gd_df = _scrape_with_retry(gd_kwargs, max_retries=max_retries)
-            all_dfs.append(gd_df)
-        except Exception as e:
-            log.error("[%s] (glassdoor): %s", label, e)
+        if has_glassdoor:
+            gd_kwargs = {
+                "site_name": ["glassdoor"],
+                "search_term": s["query"],
+                "location": gd_location,
+                "results_wanted": results_per_site,
+                "hours_old": hours_old,
+                "description_format": "markdown",
+                "job_type": job_type,
+                "verbose": 0,
+            }
+            if remote_only:
+                gd_kwargs["is_remote"] = True
+            gd_kwargs["country_indeed"] = defaults.get("country_indeed", "uk")
+            if proxy_config:
+                gd_kwargs["proxies"] = [proxy_config["jobspy"]]
+            try:
+                gd_df = _scrape_with_retry(gd_kwargs, max_retries=max_retries)
+                if gd_df is not None and len(gd_df):
+                    all_dfs.append(gd_df)
+            except Exception as e:
+                log.error("[%s] (glassdoor, %s): %s", label, job_type, e)
 
     if not all_dfs:
         log.error("[%s]: all sites failed", label)
@@ -337,8 +387,13 @@ def _run_one_search(
         log.info("[%s] 0 results", label)
         return {"new": 0, "existing": 0, "errors": 0, "filtered": 0, "total": 0, "label": label}
 
-    # Filter by location before storing
+    # Enforce remote-only and part-time/contract preferences before storing.
     before = len(df)
+    remote_only = bool(defaults.get("remote_only", True)) or bool(s.get("remote"))
+    job_types = _normalise_job_types(defaults.get("employment_types", ["parttime", "contract"]))
+    if remote_only:
+        df = df[df.apply(_remote_result_ok, axis=1)]
+    df = df[df.apply(lambda row: _employment_type_ok(row, job_types), axis=1)]
     df = df[df.apply(lambda row: _location_ok(
         str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
         accept_locs, reject_locs,
@@ -464,7 +519,7 @@ def _full_crawl(
             searches.append({
                 "query": q["query"],
                 "location": loc["location"],
-                "remote": loc.get("remote", False),
+                "remote": bool(loc.get("remote", False) or defaults.get("remote_only", True)),
                 "tier": q.get("tier", 0),
             })
 
