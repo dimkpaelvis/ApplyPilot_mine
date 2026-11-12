@@ -215,7 +215,7 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
 
     for r in batch:
         if r["score"] is not None:
-            eligibility = r.get("eligibility") or "eligible"
+            eligibility = r.get("eligibility") or "unverified"
             conn.execute(
                 "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ?, "
                 "eligibility = ?, eligibility_status = ?, eligibility_reason = ?, "
