@@ -268,45 +268,25 @@ def _setup_ai_features() -> None:
 # ---------------------------------------------------------------------------
 
 def _setup_auto_apply() -> None:
-    """Configure autonomous job application (requires Claude Code CLI)."""
+    """Explain the Playwright-assisted application workflow."""
     console.print(Panel(
-        "[bold]Step 5: Auto-Apply (optional)[/bold]\n"
-        "ApplyPilot can autonomously fill and submit job applications\n"
-        "using Claude Code as the browser agent."
+        "[bold]Step 5: Browser-assisted applications (optional)[/bold]\n"
+        "ApplyPilot uses Playwright to open application pages, suggest profile-grounded "
+        "answers and upload tailored documents. You review every field and explicitly "
+        "approve each final submission. Login, MFA and CAPTCHA remain your responsibility."
     ))
 
-    if not Confirm.ask("Enable autonomous job applications?", default=True):
-        console.print("[dim]You can apply manually using the tailored resumes ApplyPilot generates.[/dim]")
-        return
-
-    # Check for Claude Code CLI
-    if shutil.which("claude"):
-        console.print("[green]Claude Code CLI detected.[/green]")
-    else:
+    if Confirm.ask("Enable browser-assisted application review?", default=True):
         console.print(
-            "[yellow]Claude Code CLI not found on PATH.[/yellow]\n"
-            "Install it from: [bold]https://claude.ai/code[/bold]\n"
-            "Auto-apply won't work until Claude Code is installed."
+            "[green]Browser-assisted review selected.[/green]\n"
+            "Install the browser runtime with: [bold]python -m playwright install chromium[/bold]"
         )
-
-    # Optional: CapSolver for CAPTCHAs
-    console.print("\n[dim]Some job sites use CAPTCHAs. CapSolver can handle them automatically.[/dim]")
-    if Confirm.ask("Configure CapSolver API key? (optional)", default=False):
-        capsolver_key = Prompt.ask("CapSolver API key")
-        # Append to existing .env or create
-        if ENV_PATH.exists():
-            existing = ENV_PATH.read_text(encoding="utf-8")
-            if "CAPSOLVER_API_KEY" not in existing:
-                ENV_PATH.write_text(
-                    existing.rstrip() + f"\nCAPSOLVER_API_KEY={capsolver_key}\n",
-                    encoding="utf-8",
-                )
-        else:
-            ENV_PATH.write_text(f"# ApplyPilot configuration\nCAPSOLVER_API_KEY={capsolver_key}\n", encoding="utf-8")
-        console.print("[green]CapSolver key saved.[/green]")
+        console.print(
+            "[dim]No CAPTCHA-solving service is supported. The agent will not bypass "
+            "site protections or submit without your explicit approval.[/dim]"
+        )
     else:
-        console.print("[dim]Skipped. Add CAPSOLVER_API_KEY to .env later if needed.[/dim]")
-
+        console.print("[dim]You can use discovery, scoring and tailored documents without browser assistance.[/dim]")
 
 # ---------------------------------------------------------------------------
 # Optional documents
