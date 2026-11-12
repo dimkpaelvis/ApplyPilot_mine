@@ -150,6 +150,7 @@ def normalize_workplace_type(value: Any = None, is_remote: Any = None,
         return "remote"
     if remote_flag in {"false", "0", "no"}:
         return "unknown"
+    return "unknown"
 
 
 def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = None,
