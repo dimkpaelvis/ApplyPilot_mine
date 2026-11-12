@@ -31,6 +31,7 @@ from html.parser import HTMLParser
 
 from applypilot import config
 from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
 
@@ -233,18 +234,24 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             url = job.get("url")
             if not url:
                 continue
+            eligibility = classify_job_eligibility(job, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                continue
             site = job.get("employer_name") or "BuiltIn"
             description = job.get("description")
             initial_state = "discovered"
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, "
-                    "site, strategy, discovered_at, application_url, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "site, strategy, discovered_at, application_url, state, employment_type, "
+                    "workplace_type, eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         url, job.get("title"), job.get("salary"),
                         description, job.get("location"),
                         site, "builtin_html", now, url, initial_state,
+                        eligibility["employment_type"], eligibility["workplace_type"],
+                        eligibility["eligibility_status"], eligibility["eligibility_reason"],
                     ),
                 )
                 conn.execute(
