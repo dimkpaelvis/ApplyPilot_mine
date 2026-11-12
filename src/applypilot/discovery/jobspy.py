@@ -53,6 +53,7 @@ from applypilot import config
 from applypilot.database import get_connection, init_db, write_with_retry
 from applypilot.discovery.eligibility import (
     classify_job_eligibility,
+    configured_remote_countries,
     normalize_employment_type,
     normalize_workplace_type,
     remote_country_allowed,
@@ -456,7 +457,7 @@ def _run_one_search(
     # Apply each gate separately so rejected results are attributable.
     remote_only = bool(defaults.get("remote_only", True)) or bool(s.get("remote"))
     job_types = _normalise_job_types(defaults.get("employment_types", ["parttime", "contract"]))
-    allowed_countries = defaults.get("allowed_remote_countries", [])
+    allowed_countries = defaults.get("allowed_remote_countries", configured_remote_countries())
     raw_df = df.copy()
     df, rejection_counts = _jobspy_filter_results(
         raw_df, remote_only, job_types, allowed_countries, accept_locs, reject_locs
@@ -547,14 +548,18 @@ def search_jobs(
 
     import pandas as pd
     df = pd.concat(all_dfs, ignore_index=True) if len(all_dfs) > 1 else all_dfs[0]
-    if remote_only:
-        df = df[df.apply(_remote_result_ok, axis=1)]
-    df = df[df.apply(
-        lambda row: _employment_type_ok(row, job_types), axis=1
-    )]
+    allowed_countries = configured_remote_countries()
+    df, rejection_counts = _jobspy_filter_results(
+        df, remote_only, job_types, list(allowed_countries)
+    )
 
     total = len(df)
-    log.info("JobSpy returned %d matching remote part-time/contract results", total)
+    log.info(
+        "JobSpy single search: raw=%d | rejected remote=%d employment=%d country=%d "
+        "| eligible_candidates=%d",
+        rejection_counts["raw"], rejection_counts["remote"],
+        rejection_counts["employment"], rejection_counts["country"], total,
+    )
 
     if total == 0:
         return {"total": 0, "new": 0, "existing": 0}
