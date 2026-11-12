@@ -44,6 +44,10 @@ The integration imports reviewer decisions first, then refreshes the ApplyPilot-
 
 A job must pass discovery eligibility, applicant eligibility and candidate suitability. A `manual_review` job also requires an explicit `approved` decision imported from Sheets. An `auto_apply_queue` job must have the configured auto-apply qualification enabled. In either case, the Playwright application flow still asks for the exact `SUBMIT` confirmation for each individual application. Editing a cell never submits an application.
 
+## Daily discovery quota
+
+The example search configuration caps discovery at 50 new unique job URLs per London calendar day across all discovery sources. Duplicates do not consume the quota. Change `defaults.daily_unique_job_limit` in `~/.applypilot/searches.yaml` to another positive number; set it to `0` to disable the cap. The quota limits new records stored in SQLite, not the number of source queries or raw listings fetched, so source rate limits still apply.
+
 ## Operational notes
 
 - Start with a small sample and inspect the reasons for each route.
