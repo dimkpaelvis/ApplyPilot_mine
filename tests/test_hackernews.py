@@ -23,7 +23,9 @@ def _make_db() -> sqlite3.Connection:
         "  url TEXT PRIMARY KEY, title TEXT, salary TEXT, description TEXT,"
         "  location TEXT, site TEXT, strategy TEXT, discovered_at TEXT,"
         "  posted_at TEXT, full_description TEXT, detail_scraped_at TEXT,"
-        "  state TEXT DEFAULT 'discovered'"
+        "  state TEXT DEFAULT 'discovered',"
+        "  employment_type TEXT, workplace_type TEXT,"
+        "  eligibility_status TEXT, eligibility_reason TEXT"
         ")"
     )
     conn.execute(
@@ -100,7 +102,15 @@ class TestStoreHnJob(unittest.TestCase):
 
     def _store(self, job: dict) -> bool:
         from applypilot.discovery.hackernews import _store_hn_job
-        return _store_hn_job(self.conn, job, "Who is Hiring? (March 2026)")
+        eligible_defaults = {
+            "title": "Part-time Data Analyst",
+            "description": "Part-time remote data analyst role.",
+            "location": "Remote - United Kingdom",
+            "remote": True,
+            "employment_type": "parttime",
+            "workplace_type": "remote",
+        }
+        return _store_hn_job(self.conn, {**eligible_defaults, **job}, "Who is Hiring? (March 2026)")
 
     def _get_url(self, title: str) -> str | None:
         row = self.conn.execute(
@@ -169,7 +179,8 @@ class TestStoreHnJob(unittest.TestCase):
         from applypilot.discovery.hackernews import _store_hn_job
         _store_hn_job(
             self.conn,
-            {"url": "https://company.com/jobs/sre", "title": "SRE", "company": "Acme"},
+            {"url": "https://company.com/jobs/sre", "title": "SRE", "company": "Acme",
+             "description": "Part-time remote role.", "remote": True, "employment_type": "parttime"},
             "Who is Hiring? (March 2026)",
             posted_at="2026-03-02T17:30:00+00:00",
         )
