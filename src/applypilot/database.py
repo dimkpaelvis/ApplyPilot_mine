@@ -1251,13 +1251,29 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         Tuple of (new_count, duplicate_count).
     """
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
 
+    from zoneinfo import ZoneInfo
+    from applypilot.config import load_search_config
     from applypilot.discovery.url_normalize import canonicalize_application_url
 
+    search_config = load_search_config() or {}
+    defaults = search_config.get("defaults", {})
+    daily_limit = int(defaults.get("daily_unique_job_limit", 50))
+    timezone_name = str(defaults.get("daily_unique_timezone", "Europe/London"))
+    try:
+        local_tz = ZoneInfo(timezone_name)
+    except Exception:
+        _log.warning("Invalid daily_unique_timezone %r; using UTC.", timezone_name)
+        local_tz = timezone.utc
+    local_midnight = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start_utc = local_midnight.astimezone(timezone.utc).isoformat()
+
     def _do_inserts() -> None:
-        counts["new"] = 0
-        counts["existing"] = 0
+        counts.update({"new": 0, "existing": 0, "capped": 0})
+        daily_count = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE discovered_at >= ?", (day_start_utc,)
+        ).fetchone()[0]
         for job in jobs:
             url = job.get("url")
             if not url:
@@ -1272,18 +1288,29 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             # Greenhouse) so the apply agent never sees the iframe parent.
             url = canonicalize_application_url(url)
 
-            try:
-                conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    (url, job.get("title"), job.get("salary"), job.get("description"),
-                     job.get("location"), site, strategy, now),
-                )
-                counts["new"] += 1
-            except sqlite3.IntegrityError:
+            # Duplicates do not consume the daily quota.
+            if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone():
                 counts["existing"] += 1
+                continue
+            if daily_limit > 0 and daily_count >= daily_limit:
+                counts["capped"] += 1
+                continue
+
+            conn.execute(
+                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (url, job.get("title"), job.get("salary"), job.get("description"),
+                 job.get("location"), site, strategy, now),
+            )
+            counts["new"] += 1
+            daily_count += 1
 
     write_with_retry(conn, _do_inserts)
+    if counts["capped"]:
+        _log.warning(
+            "Daily unique-job discovery limit reached (%d). Skipped %d additional new listing(s).",
+            daily_limit, counts["capped"],
+        )
     return counts["new"], counts["existing"]
 
 
