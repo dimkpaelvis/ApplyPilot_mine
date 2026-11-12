@@ -7,83 +7,36 @@
 # Tier 2: Strong matches, broader scope
 # Tier 3: Wide net, high volume, lower precision
 queries:
-  - query: "software engineer"
+  - query: "junior data analyst"
     tier: 1
-  - query: "backend engineer"
+  - query: "part-time data analyst"
     tier: 1
-  - query: "backend developer"
+  - query: "freelance data analyst"
     tier: 1
-  - query: "full stack developer"
+  - query: "contract data analyst"
+    tier: 1
+  - query: "junior SQL analyst"
     tier: 2
-  - query: "full stack engineer"
+  - query: "data quality analyst"
     tier: 2
-  - query: "python developer"
+  - query: "junior data engineer"
     tier: 2
-  - query: "python engineer"
+  - query: "freelance SQL developer"
     tier: 2
-  - query: "DevOps engineer"
+  - query: "part-time reporting analyst"
     tier: 2
-  - query: "site reliability engineer"
-    tier: 2
-  - query: "platform engineer"
-    tier: 2
-  - query: "cloud engineer"
-    tier: 2
-  - query: "data engineer"
-    tier: 2
-  - query: "infrastructure engineer"
-    tier: 2
-  - query: "software developer"
-    tier: 3
-  - query: "developer"
-    tier: 3
-  - query: "systems engineer"
-    tier: 3
-  - query: "automation engineer"
-    tier: 3
-  - query: "solutions engineer"
-    tier: 3
-  - query: "integration engineer"
-    tier: 3
-  - query: "ML engineer"
-    tier: 3
-  - query: "machine learning engineer"
-    tier: 3
-  - query: "AI engineer"
-    tier: 3
-  - query: "security engineer"
-    tier: 3
-
-# Locations to search
-locations:
-  - location: "San Francisco, CA"
-    remote: false
-  - location: "Remote"
-    remote: true
 
 # Location filtering -- accept/reject patterns for job location text
-location:
-  accept_patterns:
-    - "San Francisco"
-    - "Bay Area"
-    - "SF"
-    - "California"
-    - "CA"
-    - "Remote"
-    - "Anywhere"
-    - "United States"
-    - "US"
-    - "USA"
-  reject_patterns:
-    - "New York only"
-    - "Seattle only"
-    - "onsite only"
-    - "London, UK"
-    - "India"
-    - "Philippines"
+location_accept:
+  - "United Kingdom"
+  - "UK"
+  - "Remote"
+location_reject_non_remote:
+  - "onsite only"
+  - "on-site only"
 
-# Country for Indeed/LinkedIn/Google Jobs searches
-country: "USA"
+# Country for Indeed/Glassdoor searches
+country: "UK"
 
 # JobSpy source boards (all available options shown)
 boards:
@@ -95,8 +48,13 @@ boards:
 
 # Search defaults
 defaults:
-  results_per_site: 100  # Max results per board per query
-  hours_old: 72          # Only jobs posted within this many hours
+  results_per_site: 100
+  hours_old: 72
+  country_indeed: "uk"
+  remote_only: true
+  employment_types:
+    - parttime
+    - contract  # includes freelance engagements
 
 # Negative keywords -- skip jobs with these in the title (case-insensitive)
 exclude_titles:
