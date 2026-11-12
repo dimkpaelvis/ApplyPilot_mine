@@ -20,6 +20,31 @@ allowed_remote_countries:
   - "South Africa"
   - "Singapore"
 
+matching:
+  # Candidate work location, not the employer's job location.
+  candidate_country: "United Kingdom"
+  strict:
+    require_explicit_applicant_country: true
+  timezone_policy: "review"
+  flexible:
+    role_keywords:
+      - "junior data analyst"
+      - "data operations"
+      - "data quality"
+      - "reporting analyst"
+      - "sql analyst"
+      - "junior data engineer"
+    preferred_skills:
+      - "sql"
+      - "python"
+      - "mysql"
+      - "excel"
+      - "pandas"
+    minimum_fit_score: 8
+  auto_apply:
+    # Keep false until routing has been validated on a representative sample.
+    enabled: false
+
 queries:
   - query: "junior data analyst"
     tier: 1
@@ -59,6 +84,9 @@ sites:
 # Search defaults
 defaults:
   results_per_site: 30
+  # Global cap across all discovery sources; duplicates do not consume quota.
+  daily_unique_job_limit: 50
+  daily_unique_timezone: "Europe/London"
   hours_old: 72
   country_indeed: "uk"
   remote_only: true

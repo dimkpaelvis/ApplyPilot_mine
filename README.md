@@ -33,6 +33,9 @@ pip install --no-deps python-jobspy    # separate install (broken numpy pin in m
 pip install pydantic tls-client requests markdownify regex  # jobspy runtime deps
 applypilot init          # one-time setup: resume, profile, preferences, API keys
 applypilot run           # discover > enrich > score > tailor > cover letters
+applypilot run --sync-sheets  # run pipeline, then sync the Google Sheets review queue
+applypilot sheets-test    # verify Google Sheets write access
+applypilot sheets-sync    # sync the review queue and import review decisions
 applypilot apply         # sequential, human-approved browser assistance
 applypilot track         # scan Gmail for responses and surface action items
 ```

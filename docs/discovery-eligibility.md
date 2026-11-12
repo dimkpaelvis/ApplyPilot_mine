@@ -52,3 +52,10 @@ This is a search-scope preference only. It does not establish that an employer p
 Job-board coverage is not uniform: the current JobSpy Indeed connector remains UK-scoped (`country_indeed: uk`), while LinkedIn's broad remote search may return other allowlisted markets. Direct ATS sources are also constrained by their configured employer registries. The allowlist controls which discovered listings can enter the pipeline; it does not guarantee exhaustive coverage of every listed country.
 
 JobSpy logs now report raw results and disjoint rejection counts for remote status, employment type, country scope and (for non-remote searches) location. Diagnostic samples contain only public listing fields: title, board, location, job type and remote flag. HTTP 429 responses remain source-side rate limits; ApplyPilot does not attempt to bypass them.
+
+
+## Applicant eligibility and candidate suitability
+
+Discovery eligibility does not prove that a UK-based candidate may apply. After scoring, ApplyPilot now records applicant eligibility, candidate suitability, flexible-preference results and a separate decision route. A remote US listing without explicit UK acceptance is held as unverified; an explicit US-only restriction is rejected. Timezone and country-specific work-authorisation constraints are flagged for review by default.
+
+See [Applicant eligibility and candidate suitability](applicant-suitability.md) for the decision model, configuration and route meanings.
