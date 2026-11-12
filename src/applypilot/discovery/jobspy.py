@@ -51,6 +51,7 @@ except Exception:
 
 from applypilot import config
 from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.discovery.eligibility import normalize_employment_type, normalize_workplace_type, classify_job_eligibility
 
 log = logging.getLogger(__name__)
 
@@ -173,26 +174,29 @@ def _normalise_job_types(values) -> list[str]:
 
 
 def _remote_result_ok(row) -> bool:
-    """Reject results explicitly marked non-remote after a remote-only search."""
+    """Return True only when remote workplace status is explicitly verified."""
     value = row.get("is_remote")
     if value is not None and str(value).strip().lower() not in {"", "nan", "none"}:
         if isinstance(value, bool):
             return value
-        return str(value).strip().lower() in {"true", "1", "yes", "remote"}
-    location = str(row.get("location", "") or "").lower()
-    return any(term in location for term in (
-        "remote", "anywhere", "work from home", "wfh", "distributed"
-    )) or not location
+        if str(value).strip().lower() not in {"true", "1", "yes", "remote"}:
+            return False
+        return True
+    return normalize_workplace_type(
+        None, None, str(row.get("location", "") or ""),
+        str(row.get("description", "") or ""),
+    ) == "remote"
 
 
 def _employment_type_ok(row, allowed_types: list[str]) -> bool:
-    """Reject explicit full-time or other disallowed types; unknowns rely on JobSpy's type filter."""
-    value = row.get("job_type")
-    if value is None or str(value).strip().lower() in {"", "nan", "none"}:
-        return True
-    normalised = str(value).strip().lower().replace("-", "").replace("_", "").replace(" ", "")
-    normalised = {"freelance": "contract", "contractor": "contract"}.get(normalised, normalised)
-    return normalised in allowed_types
+    """Unknown and disallowed employment types fail closed."""
+    employment = normalize_employment_type(
+        row.get("job_type"), str(row.get("description", "") or ""),
+        str(row.get("title", "") or ""),
+    )
+    aliases = {"parttime": "part_time", "contract": "contract"}
+    allowed = {aliases.get(value, value) for value in allowed_types}
+    return employment in allowed
 
 
 # -- DB storage (JobSpy DataFrame -> SQLite) ---------------------------------
@@ -210,6 +214,15 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         for _, row in rows_iter:
             url = str(row.get("job_url", ""))
             if not url or url == "nan":
+                continue
+            eligibility = classify_job_eligibility({
+                "title": row.get("title"),
+                "job_type": row.get("job_type"),
+                "is_remote": row.get("is_remote"),
+                "location": row.get("location"),
+                "description": row.get("description"),
+            }, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
                 continue
 
             title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
@@ -268,10 +281,13 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
-                    "full_description, application_url, detail_scraped_at, posted_at, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "full_description, application_url, detail_scraped_at, posted_at, state, "
+                    "employment_type, workplace_type, eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, title, salary, description, location_str, site_label, strategy, now,
-                     full_description, apply_url, detail_scraped_at, posted_at, initial_state),
+                     full_description, apply_url, detail_scraped_at, posted_at, initial_state,
+                     eligibility["employment_type"], eligibility["workplace_type"],
+                     eligibility["eligibility_status"], eligibility["eligibility_reason"]),
                 )
                 conn.execute(
                     "INSERT INTO job_state_transitions "
