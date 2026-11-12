@@ -122,20 +122,19 @@ def normalize_workplace_type(value: Any = None, is_remote: Any = None,
         return "remote"
     if any(term in location_text for term in _REMOTE_TERMS):
         return "remote"
-    if remote_flag in {"true", "1", "yes"}:
-        return "remote"
-    if remote_flag in {"false", "0", "no"}:
-        return "unknown"
-
     # Description fallback only uses explicit workplace phrases, not incidental
-    # mentions such as "we support remote teams".
-    if re.search(r"\b(fully remote|this is a remote role|remote position|work remotely|100% remote)\b", desc):
-        return "remote"
+    # mentions such as "we support remote teams". Explicit hybrid/on-site text
+    # still outranks the aggregator's generic remote flag.
     if re.search(r"\b(hybrid role|hybrid position|office attendance|days in the office)\b", desc):
         return "hybrid"
     if re.search(r"\b(on[- ]site role|on[- ]site position|must work from our office|office based role)\b", desc):
         return "onsite"
-    return "unknown"
+    if re.search(r"\b(fully remote|this is a remote role|remote position|work remotely|100% remote)\b", desc):
+        return "remote"
+    if remote_flag in {"true", "1", "yes"}:
+        return "remote"
+    if remote_flag in {"false", "0", "no"}:
+        return "unknown"
 
 
 def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = None,
