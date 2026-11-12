@@ -394,10 +394,13 @@ def _run_one_search(
     if remote_only:
         df = df[df.apply(_remote_result_ok, axis=1)]
     df = df[df.apply(lambda row: _employment_type_ok(row, job_types), axis=1)]
-    df = df[df.apply(lambda row: _location_ok(
-        str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
-        accept_locs, reject_locs,
-    ), axis=1)]
+    # In remote-only mode, the remote flag is authoritative; do not reject a
+    # verified remote role just because the board reports its eligible region.
+    if not remote_only:
+        df = df[df.apply(lambda row: _location_ok(
+            str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None,
+            accept_locs, reject_locs,
+        ), axis=1)]
     filtered = before - len(df)
 
     conn = get_connection()
