@@ -1025,5 +1025,22 @@ def creds_delete(
     console.print(f"[green]Deleted {deleted} credential row(s) for[/green] [bold]{domain}[/bold]")
 
 
+@app.command("export-applications")
+def export_applications_command(
+    output: Optional[str] = typer.Option(
+        None, "--output", "-o",
+        help="CSV destination. Defaults to ~/.applypilot/tracking/applications.csv.",
+    ),
+) -> None:
+    """Export confirmed applications to a CSV tracking sheet."""
+    _bootstrap()
+    from applypilot.tracking.export import export_applications
+
+    destination = export_applications(output)
+    console.print(f"[green]Application log exported:[/green] {destination}")
+
+
+
+
 if __name__ == "__main__":
     app()
