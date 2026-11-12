@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -127,7 +128,7 @@ def test_connection(service=None, spreadsheet_id: str | None = None) -> str:
     """Verify API write access using a temporary tab, then remove that tab."""
     service = service or _build_service()
     spreadsheet_id = spreadsheet_id or _spreadsheet_id()
-    tab = "_ApplyPilot_Connection_Test"
+    tab = "_ApplyPilot_Test_" + uuid.uuid4().hex[:12]
     sheet_id = _ensure_tab(service, spreadsheet_id, tab)
     quoted = _quote_tab(tab)
     try:
@@ -143,11 +144,14 @@ def test_connection(service=None, spreadsheet_id: str | None = None) -> str:
             body={},
         ).execute()
     finally:
-        # The tab is created exclusively for this test and is safe to remove.
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=spreadsheet_id,
-            body={"requests": [{"deleteSheet": {"sheetId": sheet_id}}]},
-        ).execute()
+        # The tab has a unique per-run name, so it cannot be an existing user tab.
+        try:
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"requests": [{"deleteSheet": {"sheetId": sheet_id}}]},
+            ).execute()
+        except Exception:
+            log.warning("Could not remove temporary Google Sheets test tab %s.", tab)
 
     metadata = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
