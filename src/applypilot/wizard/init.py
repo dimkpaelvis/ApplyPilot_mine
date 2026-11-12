@@ -1,7 +1,7 @@
 """ApplyPilot first-time setup wizard.
 
 Interactive flow that creates ~/.applypilot/ with:
-  - resume.txt (and optionally resume.pdf)
+  - resume.txt or master_cv.md (and optionally resume.pdf)
   - profile.json
   - searches.yaml
   - .env (LLM API key)
@@ -37,7 +37,7 @@ console = Console()
 
 def _setup_resume() -> None:
     """Prompt for resume file and copy into APP_DIR."""
-    console.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume file (.txt or .pdf)."))
+    console.print(Panel("[bold]Step 1: Resume[/bold]\nPoint to your master resume file (.txt, .md or .pdf)."))
 
     while True:
         path_str = Prompt.ask("Resume file path")
@@ -48,8 +48,8 @@ def _setup_resume() -> None:
             continue
 
         suffix = src.suffix.lower()
-        if suffix not in (".txt", ".pdf"):
-            console.print("[red]Unsupported format.[/red] Provide a .txt or .pdf file.")
+        if suffix not in (".txt", ".md", ".pdf"):
+            console.print("[red]Unsupported format.[/red] Provide a .txt, .md or .pdf file.")
             continue
 
         if suffix == ".txt":
@@ -61,7 +61,7 @@ def _setup_resume() -> None:
 
             # Also ask for a plain-text version for LLM consumption
             txt_path_str = Prompt.ask(
-                "Plain-text version of your resume (.txt)",
+                "Plain-text or Markdown version of your resume (.txt or .md)",
                 default="",
             )
             if txt_path_str.strip():
