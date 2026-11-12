@@ -234,7 +234,9 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             url = job.get("url")
             if not url:
                 continue
-            eligibility = classify_job_eligibility(job, require_remote=True)
+            eligibility = classify_job_eligibility({
+                **job, "workplace_type": job.get("work_mode"),
+            }, require_remote=True)
             if eligibility["eligibility_status"] != "eligible":
                 continue
             site = job.get("employer_name") or "BuiltIn"
