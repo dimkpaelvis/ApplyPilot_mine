@@ -97,6 +97,17 @@ def test_remote_role_requires_allowlisted_country():
     assert "remote_country_unverified" in unknown_country["eligibility_reason"]
 
 
+def test_country_can_be_verified_from_explicit_remote_work_location_description():
+    result = classify_job_eligibility({
+        "employment_type": "Part-time",
+        "workplace_type": "Remote",
+        "location": "Remote",
+        "description": "Applicants must be based in the United States.",
+        "title": "Data Analyst",
+    })
+    assert result["eligibility_status"] == "eligible"
+
+
 def test_full_time_and_hybrid_are_rejected():
     result = classify_job_eligibility({
         "employment_type": "Full-time",
