@@ -53,7 +53,7 @@ def test_load_resume_text_rejects_missing_file(tmp_path, monkeypatch):
 
 
 def test_load_resume_text_rejects_empty_file(tmp_path, monkeypatch):
-    empty = tmp_path / "empty.md"
+    empty = tmp_path / "master_cv.md"
     empty.write_text("  \n", encoding="utf-8")
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
 
@@ -62,7 +62,7 @@ def test_load_resume_text_rejects_empty_file(tmp_path, monkeypatch):
 
 
 def test_load_resume_text_rejects_non_utf8_file(tmp_path, monkeypatch):
-    invalid = tmp_path / "invalid.txt"
+    invalid = tmp_path / "resume.txt"
     invalid.write_bytes(b"\xff\xfe")
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
 
