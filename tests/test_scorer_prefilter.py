@@ -98,3 +98,23 @@ def test_parser_missing_eligibility_defaults_to_eligible():
     response = "SCORE: 8\nKEYWORDS: SQL, Python\nREASONING: Good match."
     parsed = _parse_score_response(response)
     assert parsed["eligibility"] == "eligible"
+
+
+
+def test_parser_extracts_full_time_only():
+    response = """ELIGIBILITY: full_time_only
+SCORE: 1
+KEYWORDS: SQL, Python
+REASONING: The posting explicitly states this is a full-time permanent role."""
+    parsed = _parse_score_response(response)
+    assert parsed["eligibility"] == "full_time_only"
+    assert parsed["score"] == 1
+
+
+def test_parser_extracts_non_remote_only():
+    response = """ELIGIBILITY: non_remote_only
+SCORE: 1
+KEYWORDS: SQL
+REASONING: The posting explicitly requires on-site attendance."""
+    parsed = _parse_score_response(response)
+    assert parsed["eligibility"] == "non_remote_only"
