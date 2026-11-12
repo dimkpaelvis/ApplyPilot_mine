@@ -1,0 +1,52 @@
+# UK-focused search profile for entry-level data and reporting roles.
+# Copy this file to ~/.applypilot/searches.yaml before running discovery.
+
+defaults:
+  location: "United Kingdom"
+  distance: 0
+  hours_old: 72
+  results_per_site: 50
+
+locations:
+  - location: "United Kingdom"
+    remote: true
+
+# Remote roles are retained by the discovery filter. Non-remote roles should
+# be UK-based; inspect the full description for location and right-to-work rules.
+location_accept:
+  - "United Kingdom"
+  - "UK"
+  - "England"
+  - "Scotland"
+  - "Wales"
+  - "Northern Ireland"
+location_reject_non_remote:
+  - "United States"
+  - "USA"
+  - "Canada"
+  - "India"
+  - "Australia"
+  - "Germany"
+  - "France"
+  - "Netherlands"
+  - "Singapore"
+
+queries:
+  - query: "Junior Data Analyst"
+    tier: 1
+  - query: "Entry Level Data Analyst"
+    tier: 1
+  - query: "Data Operations Analyst"
+    tier: 1
+  - query: "Data Quality Analyst"
+    tier: 1
+  - query: "Reporting Analyst SQL Excel"
+    tier: 1
+  - query: "SQL Analyst"
+    tier: 1
+  - query: "Data Administrator"
+    tier: 1
+  - query: "Junior BI Analyst"
+    tier: 2
+  - query: "Junior Data Engineer"
+    tier: 3
