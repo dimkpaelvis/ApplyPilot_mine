@@ -14,7 +14,6 @@ import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
 
 from applypilot.config import load_env
 from applypilot.database import get_connection, write_with_retry
