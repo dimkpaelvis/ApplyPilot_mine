@@ -177,7 +177,8 @@ def test_pending_tailor_requires_explicit_eligibility(tmp_db, seed_job):
     conn = tmp_db()
     url = seed_job(conn, url_suffix="eligibility-gate")["url"]
     conn.execute(
-        "UPDATE jobs SET fit_score = 9, full_description = ?, eligibility = NULL WHERE url = ?",
+        "UPDATE jobs SET fit_score = 9, full_description = ?, eligibility = NULL, "
+        "tailored_resume_path = NULL WHERE url = ?",
         ("Part-time remote data analyst role.", url),
     )
     conn.commit()
