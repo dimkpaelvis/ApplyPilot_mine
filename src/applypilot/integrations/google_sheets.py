@@ -290,7 +290,7 @@ def sync_to_sheet(conn=None, service=None, spreadsheet_id: str | None = None,
         if existing and existing[0]:
             row_by_url[str(existing[0]).strip()] = index
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     updates = []
     new_rows = []
     updated = 0
