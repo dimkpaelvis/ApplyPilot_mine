@@ -9,6 +9,8 @@ import re
 from functools import lru_cache
 from typing import Any
 
+import yaml
+
 _ALLOWED_EMPLOYMENT = {"part_time", "contract"}
 _REMOTE_TERMS = ("remote", "work from home", "work-from-home", "wfh", "distributed", "anywhere")
 _ONSITE_TERMS = ("on-site", "onsite", "in-person", "in person", "office-based", "office based")
@@ -40,7 +42,7 @@ def configured_remote_countries() -> tuple[str, ...]:
         cfg = load_search_config() or {}
         countries = cfg.get("allowed_remote_countries", DEFAULT_ALLOWED_REMOTE_COUNTRIES)
         return tuple(str(country).strip() for country in countries if str(country).strip())
-    except Exception:
+    except (OSError, TypeError, ValueError, yaml.YAMLError):
         return DEFAULT_ALLOWED_REMOTE_COUNTRIES
 
 
