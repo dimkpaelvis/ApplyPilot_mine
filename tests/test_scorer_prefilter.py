@@ -118,3 +118,13 @@ KEYWORDS: SQL
 REASONING: The posting explicitly requires on-site attendance."""
     parsed = _parse_score_response(response)
     assert parsed["eligibility"] == "non_remote_only"
+
+
+
+def test_parser_extracts_unverified_eligibility():
+    response = """ELIGIBILITY: unverified
+SCORE: 7
+KEYWORDS: SQL
+REASONING: Employment type and workplace type are not confirmed."""
+    parsed = _parse_score_response(response)
+    assert parsed["eligibility"] == "unverified"
