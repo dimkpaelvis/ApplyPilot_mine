@@ -41,3 +41,12 @@ pytest tests/ -q
 The GitHub Actions CI workflow runs the full suite on pushes to this feature branch and on pull requests. Source-specific integration tests mock public board responses; they do not depend on external job-board uptime.
 
 A live crawl and inspection of the user's local SQLite database must be run in the Codespace where the user's configuration and database exist. Do not treat mocked integration tests as proof that a third-party board is currently reachable or returning listings.
+
+
+## Remote country scope
+
+Remote listings must also identify a country in the configurable `allowed_remote_countries` list in `~/.applypilot/searches.yaml`. The shipped default is the core English-speaking markets: United Kingdom, Ireland, United States, Canada, Australia, New Zealand, South Africa and Singapore. Add or remove countries explicitly to suit your target market. Country matching uses the listing's location field; generic `Remote` or `Worldwide` labels remain unverified rather than being assumed eligible.
+
+This is a search-scope preference only. It does not establish that an employer permits cross-border remote work or that the applicant has legal work authorisation in that country. Review both in the full posting before applying.
+
+JobSpy logs now report raw results and disjoint rejection counts for remote status, employment type, country scope and (for non-remote searches) location. Diagnostic samples contain only public listing fields: title, board, location, job type and remote flag. HTTP 429 responses remain source-side rate limits; ApplyPilot does not attempt to bypass them.
