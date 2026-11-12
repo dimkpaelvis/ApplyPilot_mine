@@ -58,6 +58,7 @@ ELIGIBILITY: [eligible|non_uk_only]
 SCORE: [1-10]
 KEYWORDS: [comma-separated relevant ATS keywords that are genuinely supported or clearly adjacent to the candidate's evidence]
 REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions and any critical eligibility questions.]
+"""
 
 
 def _check_ineligible(job: dict) -> str | None:
@@ -78,7 +79,7 @@ def _parse_score_response(response: str) -> dict:
 
     Returns:
         {"score": int, "keywords": str, "reasoning": str, "eligibility": str}
-        eligibility is one of: 'eligible' | 'non_us_only'.
+        eligibility is one of: 'eligible' | 'non_uk_only'.
         Older models that omit ELIGIBILITY default to 'eligible' (preserves
         prior behavior; new prompt requires the line so absence is rare).
     """
@@ -143,17 +144,17 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
     if profile is None:
         profile = load_profile()
 
-    # Rule-based pre-filter: catch obvious non-US ineligible jobs before LLM call.
-    # Tags eligibility=non_us_only so downstream stages skip the job; the score
+    # Rule-based pre-filter: catch obvious non-UK ineligible jobs before LLM call.
+    # Tags eligibility=non_uk_only so downstream stages skip the job; the score
     # is still recorded so audit views can see the original LLM-style severity.
     ineligible_reason = _check_ineligible(job)
     if ineligible_reason:
-        log.info("Pre-filter INELIGIBLE (non_us_only): %s — %s", (job.get("title") or "?")[:60], ineligible_reason)
+        log.info("Pre-filter INELIGIBLE (non_uk_only): %s — %s", (job.get("title") or "?")[:60], ineligible_reason)
         return {
             "score": 2,
             "keywords": "",
             "reasoning": f"Ineligible: {ineligible_reason}. Candidate is US-based.",
-            "eligibility": "non_us_only",
+            "eligibility": "non_uk_only",
         }
 
     try:
@@ -214,9 +215,9 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
             # Eligibility-driven state transition. Non-US roles go straight to
             # `archived` (terminal) so tailor/cover/apply never pick them up,
             # bypassing the scored→tailored→ready_to_apply chain entirely.
-            if eligibility == "non_us_only":
+            if eligibility == "non_uk_only":
                 transition_state(conn, r["url"], "archived",
-                                 reason="non_us_only employer/role",
+                                 reason="non_uk_only employer/role",
                                  metadata={"score": r["score"],
                                            "eligibility": eligibility},
                                  force=True)
