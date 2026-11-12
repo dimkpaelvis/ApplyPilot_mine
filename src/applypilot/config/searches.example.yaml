@@ -7,8 +7,18 @@
 # Tier 2: Strong matches, broader scope
 # Tier 3: Wide net, high volume, lower precision
 locations:
-  - location: "Remote - United Kingdom"
+  - location: "Remote"
     remote: true
+
+allowed_remote_countries:
+  - "United Kingdom"
+  - "Ireland"
+  - "United States"
+  - "Canada"
+  - "Australia"
+  - "New Zealand"
+  - "South Africa"
+  - "Singapore"
 
 queries:
   - query: "junior data analyst"
@@ -39,7 +49,8 @@ location_reject_non_remote:
   - "onsite only"
   - "on-site only"
 
-# Country for Indeed/Glassdoor searches
+# Indeed's country selector remains UK-scoped; LinkedIn remote searches may return other allowlisted markets.
+# Other sources are filtered against allowed_remote_countries using the listing's stated location.
 country: "UK"
 
 # JobSpy source boards (all available options shown)
