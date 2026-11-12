@@ -316,7 +316,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "score_error": "TEXT",                 # set when all LLM providers failed; fit_score stays NULL
     # 2026-04-30: terminal eligibility tag set by scorer.
     # Values: NULL (not yet evaluated) | 'eligible' | 'non_us_only'.
-    # Tailor/cover/apply gate on eligibility = 'eligible' AND eligibility_status = 'eligible' AND eligibility_status = 'eligible' OR IS NULL.
+    # Tailor/cover/apply require both the scorer decision and discovery eligibility to be explicitly eligible.
     "eligibility": "TEXT",
     # (score_attempts → score_attempts via _COLUMN_RENAMES below)
     # Tailoring
@@ -927,7 +927,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "SELECT COUNT(*) FROM jobs "
         "WHERE fit_score >= ? AND full_description IS NOT NULL "
         "AND tailored_resume_path IS NULL "
-        "AND (eligibility = 'eligible' AND eligibility_status = 'eligible' AND eligibility_status = 'eligible')",
+        "AND eligibility = 'eligible' AND eligibility_status = 'eligible'",
         (_DEFAULTS["min_score"],),
     ).fetchone()[0]
 
