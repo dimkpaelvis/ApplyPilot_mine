@@ -173,6 +173,10 @@ def scrape_one_employer(
             "employer_name": name,
             "employer_slug": slug,
             "posted_at": posted_at,
+            "employment_type": next((str(item.get("value") or "") for item in (job.get("metadata") or [])
+                                     if "employment" in str(item.get("name") or "").lower()
+                                     or "commitment" in str(item.get("name") or "").lower()), ""),
+            "workplace_type": "",
         })
 
     return out, None
