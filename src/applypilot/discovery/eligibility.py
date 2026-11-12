@@ -50,7 +50,12 @@ def configured_remote_countries() -> tuple[str, ...]:
 
 def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool:
     """Return True only when the listing location names an allowed country."""
-    allowed_values = configured_remote_countries() if allowed_countries is None else tuple(allowed_countries)
+    if allowed_countries is None:
+        allowed_values = configured_remote_countries()
+    elif isinstance(allowed_countries, str):
+        allowed_values = (allowed_countries,)
+    else:
+        allowed_values = tuple(allowed_countries)
     if not allowed_values:
         return True
     text = _clean(location)
