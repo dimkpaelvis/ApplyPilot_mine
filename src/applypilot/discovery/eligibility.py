@@ -53,20 +53,18 @@ def normalize_workplace_type(value: Any = None, is_remote: Any = None,
     loc = _clean(location)
     desc = _clean(description)
     remote_flag = _clean(is_remote)
+    # Explicit hybrid/on-site values outrank a contradictory generic remote
+    # boolean; ambiguous "remote or hybrid" must never pass as remote.
+    if "hybrid" in raw:
+        return "hybrid"
+    if raw in {"on-site", "onsite", "office", "in-person", "in person", "in-office"}:
+        return "onsite"
     if remote_flag in {"true", "1", "yes"}:
         return "remote"
     if remote_flag in {"false", "0", "no"}:
-        if raw in {"hybrid", "hybrid remote"}:
-            return "hybrid"
-        if raw in {"on-site", "onsite", "office", "in-person", "in person"}:
-            return "onsite"
         return "unknown"
     if raw in {"remote", "fully remote", "fully-remote", "distributed"}:
         return "remote"
-    if raw in {"hybrid", "hybrid remote"}:
-        return "hybrid"
-    if raw in {"on-site", "onsite", "office", "in-person", "in person"}:
-        return "onsite"
 
     location_text = f"{loc} {raw}"
     if any(term in location_text for term in _REMOTE_TERMS):
