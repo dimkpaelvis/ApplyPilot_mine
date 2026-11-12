@@ -18,7 +18,7 @@ Freelance and independent-contractor wording normalizes to `contract`.
 - Missing or ambiguous workplace type becomes `unknown`.
 - Unknown values are not eligible. They are not silently treated as part-time or remote.
 
-The `jobs` table records normalized values in `employment_type`, `workplace_type`, `eligibility_status`, and `eligibility_reason` for admitted listings. Rejected discovery candidates are not inserted, so source-level filtered counts/logs should be used to understand why a crawl returned fewer records.
+The `jobs` table records normalized values in `employment_type`, `workplace_type`, `eligibility_status`, and `eligibility_reason` for admitted listings. Rejected discovery candidates are not inserted. Some sources log filtered counts or reasons, but those counters are not yet consistent across every adapter.
 
 ## Source coverage
 
