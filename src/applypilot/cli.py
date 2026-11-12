@@ -342,6 +342,47 @@ def apply(
     console.print(f"[green]Confirmed submissions recorded: {submitted}[/green]")
 
 
+@app.command("sheets-test")
+def sheets_test() -> None:
+    """Verify Google service-account authentication and spreadsheet write access."""
+    _bootstrap()
+    from applypilot.integrations.google_sheets import test_connection
+
+    try:
+        title = test_connection()
+    except Exception as exc:
+        console.print(f"[red]Google Sheets test failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+    console.print("[green]Google Sheets authentication and write access: SUCCESS[/green]")
+    console.print(f"Spreadsheet: {title}")
+
+
+@app.command("sheets-sync")
+def sheets_sync(
+    tab: str = typer.Option("Job Review", "--tab", help="Worksheet tab to use."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Count eligible rows without writing to Sheets."),
+) -> None:
+    """Import review decisions and synchronise the SQLite review queue to Google Sheets."""
+    _bootstrap()
+    from applypilot.integrations.google_sheets import sync_review_queue
+
+    try:
+        result = sync_review_queue(tab=tab, dry_run=dry_run)
+    except Exception as exc:
+        console.print(f"[red]Google Sheets sync failed:[/red] {exc}")
+        raise typer.Exit(code=1) from exc
+
+    if dry_run:
+        console.print(f"[yellow]Dry run:[/yellow] {result['eligible_rows']} evaluated jobs would be synchronised.")
+        return
+    imported = result.get("imported_decisions", {})
+    console.print("[green]Google Sheets review queue synchronised.[/green]")
+    console.print(f"  Decisions imported: {imported.get('updated', 0)}")
+    console.print(f"  Rows updated:       {result.get('updated', 0)}")
+    console.print(f"  Rows appended:      {result.get('appended', 0)}")
+    console.print("  SQLite remains the source of truth; spreadsheet edits never submit applications.")
+
+
 @app.command()
 def status() -> None:
     """Show pipeline statistics from the database."""
