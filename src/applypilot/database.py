@@ -1296,12 +1296,18 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                 counts["capped"] += 1
                 continue
 
-            conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (url, job.get("title"), job.get("salary"), job.get("description"),
-                 job.get("location"), site, strategy, now),
-            )
+            try:
+                conn.execute(
+                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (url, job.get("title"), job.get("salary"), job.get("description"),
+                     job.get("location"), site, strategy, now),
+                )
+            except sqlite3.IntegrityError:
+                # Preserve duplicate safety if another discovery worker inserted
+                # the same canonical URL after the pre-check above.
+                counts["existing"] += 1
+                continue
             counts["new"] += 1
             daily_count += 1
 
