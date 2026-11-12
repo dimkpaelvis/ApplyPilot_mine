@@ -26,7 +26,7 @@ CANDIDATE PROFILE:
 {candidate_summary}
 
 LOCATION AND ELIGIBILITY:
-The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If location eligibility is unclear, use eligible and explain the uncertainty.
+The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. On-site and hybrid roles are not suitable; mark them ELIGIBILITY: non_remote_only. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If location eligibility is unclear, use eligible and explain the uncertainty.
 
 EMPLOYMENT TYPE:
 The candidate wants PART-TIME and FREELANCE/CONTRACT work. Full-time roles are not suitable and must be marked ELIGIBILITY: full_time_only when the posting explicitly identifies the role as full-time. Treat freelance, freelancer, independent contractor and contract engagements as contract work. Do not mistake a full-time role's mention of flexible hours, remote work, or a part-time team member for a part-time vacancy. If employment type is not stated, do not assume it is part-time; explain that the type needs confirmation and score conservatively. This eligibility label does not establish the candidate's right to work or visa status.
@@ -58,7 +58,7 @@ ASSESSMENT RULES:
 - Score the role's fit, not the employer's prestige.
 
 Return exactly these four lines:
-ELIGIBILITY: [eligible|non_uk_only|full_time_only]
+ELIGIBILITY: [eligible|non_uk_only|full_time_only|non_remote_only]
 SCORE: [1-10]
 KEYWORDS: [comma-separated relevant ATS keywords that are genuinely supported or clearly adjacent to the candidate's evidence]
 REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions and any critical eligibility questions.]
@@ -99,6 +99,8 @@ def _parse_score_response(response: str) -> dict:
             value = re.sub(r"[\[\]\s]+", "_", value).strip("_")
             if value in {"full_time_only", "fulltime_only", "full_time", "fulltime"}:
                 eligibility = "full_time_only"
+            elif value in {"non_remote_only", "onsite_only", "on_site_only", "hybrid_only"}:
+                eligibility = "non_remote_only"
             elif value in {"non_uk_only", "non_us_only"} or (
                 value.startswith("non_") and ("uk" in value or "us" in value)
             ):
