@@ -12,7 +12,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from applypilot.config import COVER_LETTER_DIR, RESUME_PATH, load_profile
+from applypilot.config import COVER_LETTER_DIR, load_profile, load_resume_text
 from applypilot.database import get_connection, transition_state, write_with_retry
 from applypilot.llm import get_client
 from applypilot.scoring.validator import (
@@ -319,7 +319,7 @@ def run_cover_letters(min_score: int | None = None, limit: int = 20, workers: in
         min_score = DEFAULTS["min_score"]
 
     profile = load_profile()
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = load_resume_text()
     conn = get_connection()
 
     # Note: get_jobs_by_stage applies a 14-day discovered_at filter by default
