@@ -604,6 +604,11 @@ def _full_crawl(
     )
     if configured_countries is None:
         configured_countries = list(configured_remote_countries())
+        # Older generated configs requested 100 results per board. Cap that
+        # legacy default after broadening the search to avoid unnecessary load.
+        if results_per_site > 30:
+            log.info("Legacy search config: reducing results_per_site from %d to 30", results_per_site)
+            results_per_site = 30
         if defaults.get("remote_only", True):
             for location_cfg in search_cfg.get("locations", []):
                 legacy_location = str(location_cfg.get("location", "")).strip().casefold()
