@@ -45,7 +45,7 @@ A live crawl and inspection of the user's local SQLite database must be run in t
 
 ## Remote country scope
 
-Remote listings must also identify a country in the configurable `allowed_remote_countries` list in `~/.applypilot/searches.yaml`. The shipped default is the core English-speaking markets: United Kingdom, Ireland, United States, Canada, Australia, New Zealand, South Africa and Singapore. Add or remove countries explicitly to suit your target market. Country matching uses the listing's location field; generic `Remote` or `Worldwide` labels remain unverified rather than being assumed eligible.
+Across the shared discovery eligibility gate, remote listings must also identify a country in the configurable `allowed_remote_countries` list in `~/.applypilot/searches.yaml`. The shipped default is the core English-speaking markets: United Kingdom, Ireland, United States, Canada, Australia, New Zealand, South Africa and Singapore. Add or remove countries explicitly to suit your target market. Country matching uses the listing's location field; generic `Remote` or `Worldwide` labels remain unverified rather than being assumed eligible.
 
 This is a search-scope preference only. It does not establish that an employer permits cross-border remote work or that the applicant has legal work authorisation in that country. Review both in the full posting before applying.
 
