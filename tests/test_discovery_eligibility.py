@@ -53,6 +53,7 @@ def test_employment_type_normalization(raw, expected):
 @pytest.mark.parametrize(("raw", "expected"), [
     ("Remote", "remote"),
     ("Hybrid", "hybrid"),
+    ("Remote or Hybrid", "hybrid"),
     ("On-site", "onsite"),
     (None, "unknown"),
 ])
@@ -229,3 +230,8 @@ def test_workday_detail_fields_flow_into_normalized_storage(monkeypatch, db):
         "SELECT employment_type, workplace_type FROM jobs"
     ).fetchone()
     assert row == ("part_time", "remote")
+
+
+
+def test_hybrid_label_overrides_conflicting_remote_boolean():
+    assert normalize_workplace_type("Hybrid", True) == "hybrid"
