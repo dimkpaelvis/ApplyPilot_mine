@@ -62,14 +62,16 @@ REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions
 
 
 def _check_ineligible(job: dict) -> str | None:
-    """Do not pre-filter by geography or seniority.
+    """Defer eligibility decisions to the UK-focused LLM assessment.
 
-    This fork targets UK-based junior data roles. The previous upstream
-    pre-filter hard-coded US residency and excluded junior titles, which
-    would incorrectly reject the intended search results. The LLM prompt
-    now evaluates UK location restrictions with the candidate context.
+    A deterministic title/location pre-filter previously rejected junior
+    roles and non-US locations. That behaviour is incompatible with this
+    UK-based junior-data-role search. It also cannot reliably distinguish
+    a location restriction from incidental country mentions or infer
+    right-to-work status. Return None and let the full posting be assessed.
     """
     return None
+
 
 def _parse_score_response(response: str) -> dict:
     """Parse the LLM's score response into structured data.
@@ -78,10 +80,8 @@ def _parse_score_response(response: str) -> dict:
         response: Raw LLM response text.
 
     Returns:
-        {"score": int, "keywords": str, "reasoning": str, "eligibility": str}
-        eligibility is one of: 'eligible' | 'non_uk_only'.
-        Older models that omit ELIGIBILITY default to 'eligible' (preserves
-        prior behavior; new prompt requires the line so absence is rare).
+        A dictionary containing score, keywords, reasoning and eligibility.
+        Legacy 'non_us_only' values are normalised to 'non_uk_only'.
     """
     score = 0
     keywords = ""
@@ -93,7 +93,9 @@ def _parse_score_response(response: str) -> dict:
         if line.startswith("ELIGIBILITY:"):
             value = line.replace("ELIGIBILITY:", "").strip().lower()
             value = re.sub(r"[\[\]\s]+", "_", value).strip("_")
-            if "non" in value and ("uk" in value or "us" in value):
+            if value in {"non_uk_only", "non_us_only"} or (
+                value.startswith("non_") and ("uk" in value or "us" in value)
+            ):
                 eligibility = "non_uk_only"
             else:
                 eligibility = "eligible"
@@ -131,6 +133,7 @@ def _build_candidate_summary(profile: dict) -> str:
     parts.append(f"Target roles: {', '.join(targets[:8])}.")
     return " ".join(parts)
 
+
 def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
     """Score a single job against the resume.
 
@@ -139,21 +142,18 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
         job: Job dict with keys: title, site, location, full_description.
 
     Returns:
-        {"score": int, "keywords": str, "reasoning": str}
+        A dictionary containing score, keywords, reasoning and eligibility.
     """
     if profile is None:
         profile = load_profile()
 
-    # Rule-based pre-filter: catch obvious non-UK ineligible jobs before LLM call.
-    # Tags eligibility=non_uk_only so downstream stages skip the job; the score
-    # is still recorded so audit views can see the original LLM-style severity.
     ineligible_reason = _check_ineligible(job)
     if ineligible_reason:
         log.info("Pre-filter INELIGIBLE (non_uk_only): %s — %s", (job.get("title") or "?")[:60], ineligible_reason)
         return {
             "score": 2,
             "keywords": "",
-            "reasoning": f"Ineligible: {ineligible_reason}. Candidate is US-based.",
+            "reasoning": f"Ineligible: {ineligible_reason}.",
             "eligibility": "non_uk_only",
         }
 
@@ -212,9 +212,6 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                 (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
                  r["url"]),
             )
-            # Eligibility-driven state transition. Non-US roles go straight to
-            # `archived` (terminal) so tailor/cover/apply never pick them up,
-            # bypassing the scored→tailored→ready_to_apply chain entirely.
             if eligibility == "non_uk_only":
                 transition_state(conn, r["url"], "archived",
                                  reason="non_uk_only employer/role",
@@ -228,13 +225,11 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                                  metadata={"score": r["score"],
                                            "eligibility": eligibility})
         else:
-            # LLM failure — keep fit_score NULL so it stays in pending_score
             row = conn.execute(
                 "SELECT COALESCE(score_attempts, 0) FROM jobs WHERE url = ?", (r["url"],)
             ).fetchone()
             retry_count = row[0] if row else 0
             if retry_count >= MAX_SCORE_RETRIES:
-                # Give up — write score_error but don't schedule another retry
                 conn.execute(
                     "UPDATE jobs SET score_error = ?, score_attempts = ?, "
                     "score_next_retry_at = NULL, scored_at = ? WHERE url = ?",
@@ -278,9 +273,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
             query += f" LIMIT {limit}"
         jobs = conn.execute(query).fetchall()
     else:
-        # Note: get_jobs_by_stage now applies a 14-day discovered_at filter by
-        # default (config.DEFAULTS["max_job_age_days"]). Pass max_age_days=0
-        # to disable.
         jobs = get_jobs_by_stage(conn=conn, stage="pending_score",
                                  max_age_days=max_age_days, limit=limit)
 
@@ -288,7 +280,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
         log.info("No unscored jobs with descriptions found.")
         return {"scored": 0, "errors": 0, "elapsed": 0.0, "distribution": []}
 
-    # Convert sqlite3.Row to dicts if needed
     if jobs and not isinstance(jobs[0], dict):
         columns = jobs[0].keys()
         jobs = [dict(zip(columns, row)) for row in jobs]
@@ -297,7 +288,7 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
     t0 = time.time()
     completed = 0
     errors = 0
-    batch_size = 25  # Commit every N jobs so downstream stages see results sooner
+    batch_size = 25
     batch: list[dict] = []
 
     def _score_one(job: dict) -> dict:
@@ -355,7 +346,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
             if len(batch) >= batch_size:
                 batch = _flush_and_log(batch, completed)
 
-    # Flush remaining
     if batch:
         now = datetime.now(timezone.utc).isoformat()
         try:
@@ -366,7 +356,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
     elapsed = time.time() - t0
     log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", completed, elapsed, completed / elapsed if elapsed > 0 else 0)
 
-    # Score distribution
     try:
         dist = conn.execute("""
             SELECT fit_score, COUNT(*) FROM jobs
