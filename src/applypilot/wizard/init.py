@@ -176,7 +176,7 @@ def _setup_searches() -> None:
     """Generate a searches.yaml from user input."""
     console.print(Panel("[bold]Step 3: Job Search Config[/bold]\nDefine what you're looking for."))
 
-    location = Prompt.ask("Target location (e.g. 'Remote', 'Canada', 'New York, NY')", default="Remote")
+    location = Prompt.ask("Search location (remote searches use the configured country allowlist)", default="Remote")
     distance_str = Prompt.ask("Search radius in miles (0 for remote-only)", default="0")
     try:
         distance = int(distance_str)
@@ -201,7 +201,7 @@ def _setup_searches() -> None:
         f'  location: "{location}"',
         f"  distance: {distance}",
         "  hours_old: 72",
-        "  results_per_site: 50",
+        "  results_per_site: 30",
         '  country_indeed: "uk"',
         "  remote_only: true",
         "  employment_types:",
