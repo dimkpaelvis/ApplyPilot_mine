@@ -29,7 +29,7 @@ LOCATION AND ELIGIBILITY:
 The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. On-site and hybrid roles are not suitable; mark them ELIGIBILITY: non_remote_only. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If location eligibility is unclear, use eligible and explain the uncertainty.
 
 EMPLOYMENT TYPE:
-The candidate wants PART-TIME and FREELANCE/CONTRACT work. Full-time roles are not suitable and must be marked ELIGIBILITY: full_time_only when the posting explicitly identifies the role as full-time. Treat freelance, freelancer, independent contractor and contract engagements as contract work. Do not mistake a full-time role's mention of flexible hours, remote work, or a part-time team member for a part-time vacancy. If employment type is not stated, do not assume it is part-time; explain that the type needs confirmation and score conservatively. This eligibility label does not establish the candidate's right to work or visa status.
+The candidate wants PART-TIME and FREELANCE/CONTRACT work. Full-time roles are not suitable and must be marked ELIGIBILITY: full_time_only when the posting explicitly identifies the role as full-time. Treat freelance, freelancer, independent contractor and contract engagements as contract work. Do not mistake a full-time role's mention of flexible hours, remote work, or a part-time team member for a part-time vacancy. If employment type is not stated, return ELIGIBILITY: unverified; do not assume it is part-time. If workplace type is not explicitly remote, return ELIGIBILITY: unverified or non_remote_only as appropriate. Never mark an unknown employment or workplace type eligible. This eligibility label does not establish the candidate's right to work or visa status.
 
 TARGET ROLE FAMILIES:
 - Junior / entry-level Data Analyst
@@ -58,7 +58,7 @@ ASSESSMENT RULES:
 - Score the role's fit, not the employer's prestige.
 
 Return exactly these four lines:
-ELIGIBILITY: [eligible|non_uk_only|full_time_only|non_remote_only]
+ELIGIBILITY: [eligible|non_uk_only|full_time_only|non_remote_only|unverified]
 SCORE: [1-10]
 KEYWORDS: [comma-separated relevant ATS keywords that are genuinely supported or clearly adjacent to the candidate's evidence]
 REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions and any critical eligibility questions.]
@@ -90,7 +90,7 @@ def _parse_score_response(response: str) -> dict:
     score = 0
     keywords = ""
     reasoning = response
-    eligibility = "eligible"
+    eligibility = "unverified"
 
     for line in response.split("\n"):
         line = line.strip()
@@ -105,8 +105,12 @@ def _parse_score_response(response: str) -> dict:
                 value.startswith("non_") and ("uk" in value or "us" in value)
             ):
                 eligibility = "non_uk_only"
-            else:
+            elif value == "eligible":
                 eligibility = "eligible"
+            elif value in {"unverified", "unknown", "not_verified", "employment_type_unverified", "workplace_type_unverified"}:
+                eligibility = "unverified"
+            else:
+                eligibility = "unverified"
         elif line.startswith("SCORE:"):
             try:
                 score = int(re.search(r"\d+", line).group())
@@ -220,9 +224,9 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                 (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
                  r["url"]),
             )
-            if eligibility == "non_uk_only":
+            if eligibility != "eligible":
                 transition_state(conn, r["url"], "archived",
-                                 reason="non_uk_only employer/role",
+                                 reason=f"ineligible or unverified: {eligibility}",
                                  metadata={"score": r["score"],
                                            "eligibility": eligibility},
                                  force=True)
