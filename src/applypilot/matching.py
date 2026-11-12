@@ -154,7 +154,12 @@ def _evaluate_applicant(job: dict, profile: dict, cfg: dict) -> tuple[str, list[
 
     # Work-authorisation claims are only assessed when the profile explicitly
     # records an answer for that same country. Never infer from citizenship.
-    if re.search(r"(?:must|need to be|requires? you to be) (?:legally )?authorized to work in", combined):
+    auth_required = re.search(
+        r"\b(?:work authorization|work authorisation|right to work|"
+        r"authorized to work|authorised to work)\b",
+        combined,
+    )
+    if auth_required:
         auth = profile.get("work_authorization", {})
         auth_country = _text(auth.get("country"))
         if auth_country and _contains_country(combined, auth_country):
@@ -201,6 +206,9 @@ def evaluate_job_match(job: dict, profile: dict, fit_score: int | None = None,
         suitability = "suitable"
         if required_years is not None:
             suitability_reasons.append("required_experience_threshold_met")
+        elif re.search(r"\b(senior|lead|principal|staff|director|manager)\b", title):
+            suitability = "review"
+            suitability_reasons.append("senior_level_title_requires_review")
         else:
             suitability_reasons.append("no_explicit_minimum_experience_detected")
 

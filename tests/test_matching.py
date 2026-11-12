@@ -99,3 +99,20 @@ def test_auto_apply_is_disabled_by_default():
     result = evaluate_job_match(job("SQL and Python required."), profile(), 9, cfg(enabled=False))
     assert result["decision_route"] == "manual_review"
     assert result["auto_apply_qualified"] == 0
+
+def test_work_authorisation_requirement_without_country_specific_profile_is_unverified():
+    result = evaluate_job_match(
+        job("US work authorization required.", "Remote - USA"),
+        profile(), 9, cfg()
+    )
+    assert result["applicant_eligibility"] == "unverified"
+    assert "country_specific_work_authorisation_unverified" in result["applicant_eligibility_reason"]
+
+
+def test_senior_title_without_explicit_years_requires_review():
+    result = evaluate_job_match(
+        job("Investment data analyst responsibilities.", title="Senior Data Analyst"),
+        profile(years="1"), 9, cfg()
+    )
+    assert result["candidate_suitability"] == "review"
+    assert result["decision_route"] == "review_required"
