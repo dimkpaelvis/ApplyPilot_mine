@@ -221,7 +221,7 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                 "eligibility = ?, eligibility_status = ?, eligibility_reason = ?, "
                 "score_error = NULL, score_attempts = 0, score_next_retry_at = NULL "
                 "WHERE url = ?",
-                (r["score"], f"{r['keywords']}\\n{r['reasoning']}", now, eligibility,
+                (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
                  "eligible" if eligibility == "eligible" else "rejected",
                  None if eligibility == "eligible" else eligibility, r["url"]),
             )
