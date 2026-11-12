@@ -117,7 +117,7 @@ def test_acquire_job_blocks_over_cap(tmp_db, seed_job, monkeypatch, tmp_path):
     seed_job(conn, url_suffix="new", company="acme",
              fit_score=9, tailored_resume_path="/tmp/r.pdf",
              apply_status=None, applied_at=None, last_attempted_at=None,
-             discovered_at=_iso(1))
+             discovered_at=_iso(1), review_decision="approved")
 
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
     config._company_limits_cache = None
@@ -136,7 +136,7 @@ def test_acquire_job_respects_per_company_override(tmp_db, seed_job, monkeypatch
                  apply_status="applied", applied_at=_iso(1))
     seed_job(conn, url_suffix="nf-new", company="netflix", fit_score=10,
              tailored_resume_path="/tmp/r.pdf", apply_status=None,
-             discovered_at=_iso(1))
+             discovered_at=_iso(1), review_decision="approved")
 
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
     (tmp_path / "company_limits.yaml").write_text("""
@@ -156,7 +156,7 @@ def test_acquire_job_null_company_exempt(tmp_db, seed_job, monkeypatch, tmp_path
     conn = tmp_db()
     seed_job(conn, url_suffix="hn-post", company=None, fit_score=9,
              tailored_resume_path="/tmp/r.pdf", apply_status=None,
-             discovered_at=_iso(1))
+             discovered_at=_iso(1), review_decision="approved")
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
     config._company_limits_cache = None
 
@@ -173,7 +173,7 @@ def test_acquire_job_cap_zero_blocks_company(tmp_db, seed_job, monkeypatch, tmp_
     conn = tmp_db()
     seed_job(conn, url_suffix="blocked", company="google", fit_score=10,
              tailored_resume_path="/tmp/r.pdf", apply_status=None,
-             discovered_at=_iso(1))
+             discovered_at=_iso(1), review_decision="approved")
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
     (tmp_path / "company_limits.yaml").write_text("""
 overrides:
@@ -192,7 +192,7 @@ def test_acquire_job_stale_filter(tmp_db, seed_job, monkeypatch, tmp_path):
     conn = tmp_db()
     seed_job(conn, url_suffix="stale", company="acme", fit_score=9,
              tailored_resume_path="/tmp/r.pdf", apply_status=None,
-             discovered_at=_iso(30))
+             discovered_at=_iso(30), review_decision="approved")
     monkeypatch.setattr(config, "APP_DIR", tmp_path)
     config._company_limits_cache = None
 
