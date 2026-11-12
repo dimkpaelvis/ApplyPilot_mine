@@ -159,7 +159,7 @@ def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = No
     elif require_remote and not remote_country_allowed(job.get("location")):
         # A generic "Remote" label does not establish the country in which
         # the employer permits the worker to be based. Fail closed.
-        reasons.append("remote_country_unverified_or_out_of_scope")
+        reasons.append("remote_country_unverified")
     return {
         "employment_type": employment,
         "workplace_type": workplace,
