@@ -22,7 +22,7 @@ The `jobs` table records normalized values in `employment_type`, `workplace_type
 
 ## Source coverage
 
-The common rule is applied to JobSpy, Greenhouse, Lever, Ashby, Workday, Amazon, Costco, BuiltIn, Smart Extract, and Hacker News before insertion. JobSpy uses its structured `job_type` and `is_remote` fields where available. ATS sources prefer their structured employment/workplace fields and fall back to explicit title/description/location wording.
+The common rule is applied to JobSpy, Greenhouse, Lever, Ashby, Workday, Amazon, Costco, BuiltIn, Smart Extract, and Hacker News before insertion. JobSpy uses its structured `job_type` and `is_remote` fields where available. Greenhouse, Lever, Ashby and Workday map their source-specific fields into the canonical types. BuiltIn maps its `work_mode` field; Hacker News extraction requests an explicit employment type. Other sources fall back to explicit title/description/location wording.
 
 A source that does not expose enough evidence will return fewer eligible jobs. This is intentional: the system favours precision over recall for the user's strict remote, part-time/contract preference.
 
