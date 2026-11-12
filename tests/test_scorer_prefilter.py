@@ -151,7 +151,9 @@ def test_noneligible_or_missing_scoring_decision_is_archived(tmp_db, seed_job, e
         "SELECT eligibility, eligibility_status FROM jobs WHERE url = ?", (url,)
     ).fetchone()
     assert row[0] == (eligibility or "unverified")
-    assert row[1] == "rejected"
+    assert row[1] == (
+        "unverified" if eligibility in {None, "unverified"} else "rejected"
+    )
 
 
 
