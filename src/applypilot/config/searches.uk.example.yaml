@@ -13,6 +13,10 @@ locations:
 
 # Remote roles must identify one of the allowlisted countries above. A generic
 # 'Remote'/'Worldwide' location is unverified and is not admitted to the pipeline.
+sites:
+  - indeed
+  - linkedin
+
 allowed_remote_countries:
   - "United Kingdom"
   - "Ireland"
