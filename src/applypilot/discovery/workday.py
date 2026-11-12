@@ -23,6 +23,7 @@ import yaml
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
 
@@ -340,6 +341,15 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         counts["new"] = 0
         counts["existing"] = 0
         for job in jobs:
+            eligibility = classify_job_eligibility({
+                **job,
+                "employment_type": job.get("time_type"),
+                "workplace_type": job.get("remote_type"),
+            }, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                log.debug("Workday filtered %s before insert: %s",
+                          job.get("title", ""), eligibility["eligibility_reason"])
+                continue
             url = job.get("apply_url", "")
             if not url:
                 emp = employers.get(job.get("employer_key", ""), {})
@@ -361,11 +371,14 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
-                    "detail_scraped_at, detail_error) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "detail_scraped_at, detail_error, employment_type, workplace_type, "
+                    "eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, short_desc, job.get("location"),
                      site, strategy, now, job.get("posted_at"), full_description, url,
-                     detail_scraped_at, detail_error),
+                     detail_scraped_at, detail_error, eligibility["employment_type"],
+                     eligibility["workplace_type"], eligibility["eligibility_status"],
+                     eligibility["eligibility_reason"]),
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
