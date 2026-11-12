@@ -1253,7 +1253,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     now = datetime.now(timezone.utc).isoformat()
     counts = {"new": 0, "existing": 0, "capped": 0}
 
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     from applypilot.config import load_search_config
     from applypilot.discovery.url_normalize import canonicalize_application_url
 
@@ -1263,7 +1263,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     timezone_name = str(defaults.get("daily_unique_timezone", "Europe/London"))
     try:
         local_tz = ZoneInfo(timezone_name)
-    except Exception:
+    except ZoneInfoNotFoundError:
         _log.warning("Invalid daily_unique_timezone %r; using UTC.", timezone_name)
         local_tz = timezone.utc
     local_midnight = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
