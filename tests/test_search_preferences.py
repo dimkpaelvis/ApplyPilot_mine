@@ -70,6 +70,14 @@ def test_explicit_remote_description_overrides_conflicting_false_flag():
     }))
 
 
+def test_hybrid_description_overrides_remote_location_and_boolean():
+    from applypilot.discovery.eligibility import normalize_workplace_type
+
+    assert normalize_workplace_type(
+        None, True, "Remote - UK", "This is a hybrid role with office attendance."
+    ) == "hybrid"
+
+
 def test_remote_country_allowlist_accepts_aliases_and_rejects_unknown():
     allowed = ["United Kingdom", "United States"]
     assert _remote_country_ok("Remote - UK", allowed)
