@@ -240,7 +240,7 @@ def test_smartextract_insert_creates_initial_transition(tmp_db):
     jobs = [{
         "url": "https://company.com/jobs/senior-engineer",
         "title": "Senior Engineer",
-        "location": "Remote",
+        "location": "Remote - United Kingdom",
         "employment_type": "parttime",
         "description": "An amazing opportunity at our company. " * 10,  # > 200 chars
         "salary": None,
