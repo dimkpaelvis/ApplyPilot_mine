@@ -105,8 +105,8 @@ def main() -> None:
     parser.add_argument("--input", required=True, help="Path to the newer profile JSON.")
     parser.add_argument(
         "--output",
-        default=str(Path.home() / ".applypilot" / "profile.json"),
-        help="Output path (default: ~/.applypilot/profile.json).",
+        default=str(Path.home() / ".applypilot" / "profile.converted.json"),
+        help="Output path (default: ~/.applypilot/profile.converted.json; review before replacing profile.json).",
     )
     args = parser.parse_args()
 
