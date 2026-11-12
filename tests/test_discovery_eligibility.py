@@ -73,9 +73,28 @@ def test_only_remote_part_time_or_contract_is_eligible():
         result = classify_job_eligibility({
             "employment_type": employment,
             "workplace_type": "Remote",
+            "location": "Remote - United Kingdom",
             "title": "Data Analyst",
         })
         assert result["eligibility_status"] == "eligible"
+
+
+def test_remote_role_requires_allowlisted_country():
+    allowed = classify_job_eligibility({
+        "employment_type": "Part-time",
+        "workplace_type": "Remote",
+        "location": "Remote - United Kingdom",
+        "title": "Data Analyst",
+    })
+    unknown_country = classify_job_eligibility({
+        "employment_type": "Part-time",
+        "workplace_type": "Remote",
+        "location": "Remote / Worldwide",
+        "title": "Data Analyst",
+    })
+    assert allowed["eligibility_status"] == "eligible"
+    assert unknown_country["eligibility_status"] == "unverified"
+    assert "remote_country_unverified" in unknown_country["eligibility_reason"]
 
 
 def test_full_time_and_hybrid_are_rejected():
