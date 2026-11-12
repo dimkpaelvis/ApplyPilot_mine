@@ -292,6 +292,10 @@ _ALL_COLUMNS: dict[str, str] = {
     "strategy": "TEXT",
     "discovered_at": "TEXT",
     "posted_at": "TEXT",                     # original posting date from the employer/board
+    "employment_type": "TEXT",                # part_time | contract | full_time | other | unknown
+    "workplace_type": "TEXT",                 # remote | hybrid | onsite | unknown
+    "eligibility_status": "TEXT DEFAULT 'unverified'",
+    "eligibility_reason": "TEXT",
     # Canonical pipeline state. Enum enforced in Python (see VALID_STATES)
     # rather than a SQL CHECK — SQLite can't easily add CHECKs post-hoc.
     "state": "TEXT DEFAULT 'discovered'",
