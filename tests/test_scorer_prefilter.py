@@ -216,7 +216,7 @@ def test_score_job_allows_verified_remote_part_time_to_llm(monkeypatch):
                 "REASONING: Remote part-time role matches the candidate."
             )
 
-    monkeypatch.setattr(scorer, "get_client", FakeClient)
+    monkeypatch.setattr(scorer, "get_client", lambda: FakeClient())
     result = score_job(
         "resume text",
         {"title": "Part-time Data Analyst", "site": "Example",
