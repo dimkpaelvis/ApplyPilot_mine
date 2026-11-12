@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/uk-job-search-and-application-log]
   pull_request:
-    branches: [main]
   workflow_dispatch:  # also allow manual trigger
 
 jobs:
