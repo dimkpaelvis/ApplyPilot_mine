@@ -12,6 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 from applypilot.config import RESUME_PATH, load_profile
+from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.database import get_connection, get_jobs_by_stage, write_with_retry
 from applypilot.llm import get_client
 
@@ -158,6 +159,25 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
     """
     if profile is None:
         profile = load_profile()
+
+    # Re-check canonical fields before scoring. This also protects legacy or
+    # manually-added rows that bypassed a discovery adapter.
+    normalized = classify_job_eligibility(job, require_remote=True)
+    if normalized["eligibility_status"] != "eligible":
+        reason = normalized["eligibility_reason"] or "eligibility_unverified"
+        if normalized["employment_type"] == "full_time":
+            label = "full_time_only"
+        elif normalized["workplace_type"] in {"hybrid", "onsite"}:
+            label = "non_remote_only"
+        else:
+            label = "unverified"
+        log.info("Eligibility gate rejected %s: %s", (job.get("title") or "?")[:60], reason)
+        return {
+            "score": 1,
+            "keywords": "",
+            "reasoning": f"Not scored: {reason}.",
+            "eligibility": label,
+        }
 
     ineligible_reason = _check_ineligible(job)
     if ineligible_reason:
