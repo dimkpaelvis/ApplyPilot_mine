@@ -109,7 +109,7 @@ def _quote_tab(tab: str) -> str:
 def _ensure_tab(service, spreadsheet_id: str, tab: str) -> int:
     metadata = service.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
-        fields="sheets.properties(sheetId,title)",
+        fields="sheets(properties(sheetId,title))",
     ).execute()
     for item in metadata.get("sheets", []):
         props = item.get("properties", {})
