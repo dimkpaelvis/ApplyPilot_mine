@@ -20,51 +20,44 @@ log = logging.getLogger(__name__)
 
 # ── Scoring Prompt ────────────────────────────────────────────────────────
 
-SCORE_PROMPT_TEMPLATE = """You are a job fit evaluator. Given a candidate's resume and a job description, score how well the candidate fits the role.
+SCORE_PROMPT_TEMPLATE = """You are a rigorous UK-focused recruiter assessing a candidate for junior data, analytics, reporting and data operations roles.
 
-THE CANDIDATE: {candidate_summary}
+CANDIDATE PROFILE:
+{candidate_summary}
 
-⚠️ GEOGRAPHY CHECK — DO THIS FIRST, BEFORE ANYTHING ELSE:
-The candidate is US-based (Seattle, WA). Any role restricted to non-US geography is INELIGIBLE.
-Read the FULL description for buried sentences like "This role will be remote and based in the UK"
-or "Remote — Ontario, BC or Alberta". A perfect tech stack on a non-US role is still INELIGIBLE.
+GEOGRAPHY AND ELIGIBILITY:
+The candidate is based in Sheerness, Kent, United Kingdom. Prefer roles explicitly open to applicants based in the UK, UK-remote roles, or roles whose location is not restricted. Do NOT mark a job ineligible merely because it is outside the United States or because it mentions UK right-to-work checks. Mark ELIGIBILITY: non_uk_only only when the posting clearly restricts hiring to a different country or region and excludes UK-based applicants. If unclear, use eligible and explain the uncertainty. This eligibility label is about location only; it does not establish the candidate's right to work or visa status.
 
-Output ELIGIBILITY: non_us_only when the role's hiring location is restricted to a non-US country
-even if the role is remote. Output ELIGIBILITY: eligible when the role is open to US workers
-(US-only, US-remote, global-remote, or no restriction).
+TARGET ROLE FAMILIES:
+- Junior / entry-level Data Analyst
+- Data Operations Analyst / Data Administrator
+- Data Quality Analyst / Data Quality Assistant
+- Reporting Analyst / SQL Analyst
+- Junior BI Analyst
+- Junior Data Engineer (stretch target)
 
-Common signals for non_us_only:
-- "based in (UK|Canada|Ireland|Germany|...)"
-- "Remote — (UK|Canada|Europe|EMEA|APAC)"
-- "(m/f/d)" / "(m/w/d)" German title suffix
-- UK/Canada right-to-work questions in the form
-- CET / GMT+N / IST timezone requirement
+SCORING:
+10: Exceptional match for the candidate's actual evidence and the role's level.
+9: Very strong match; most required tools and responsibilities are evidenced.
+7-8: Good match; core SQL, Excel, Python, data cleaning, reporting or database skills align, with manageable gaps.
+5-6: Partial match; meaningful transferable skills but important required skills or experience are missing.
+3-4: Weak match; role is mainly outside data/analytics or requires substantially more experience.
+1-2: Not relevant to the candidate's stated target roles.
 
-If non_us_only, you MAY still produce a SCORE based on tech-stack fit (for audit), but the
-eligibility tag is what determines whether the application proceeds.
+ASSESSMENT RULES:
+- Evaluate junior and entry-level roles positively when the candidate's evidence aligns. Do not penalise a candidate simply for being early-career.
+- Distinguish required skills from desirable skills.
+- Assess SQL, Excel, Python, pandas, MySQL, data cleaning, data validation, reconciliation, dashboards, reporting, ETL and data quality where relevant.
+- Do not assume commercial experience, production-scale engineering, cloud platforms, advanced statistics, degrees or certifications unless evidenced in the resume.
+- Flag required experience, tools, qualifications, location restrictions and work-authorisation conditions that are not established by the supplied evidence.
+- Do not advise the candidate to claim a skill or qualification they do not have.
+- Score the role's fit, not the employer's prestige.
 
-SCORING CRITERIA:
-- 10: Near-perfect IC engineering match. The role is a software/platform/infrastructure engineer position requiring the candidate's exact stack (Go/Kotlin/Python/Java, distributed systems, K8s). Seniority aligns (Senior/Staff/Principal). The candidate would be a top-tier applicant with minimal gaps.
-- 9: Excellent engineering match. Strong alignment on tech stack and seniority, with 1-2 gaps in secondary skills or slightly different domain.
-- 7-8: Good engineering match. Candidate has most required technical skills. Minor gaps in specific frameworks or domain experience, easily bridged.
-- 5-6: Moderate match. The role is engineering but uses a different primary stack, or there's a seniority mismatch (e.g., junior role or executive-only role with no IC component).
-- 3-4: Weak match. Engineering role but wrong specialization (frontend-only, mobile, ML research, data science), or a non-engineering role with some technical overlap.
-- 1-2: Poor match. Non-engineering role (recruiting, design, marketing, product management, sales), completely different field, OR non-US geographic restriction.
-
-ADDITIONAL RULES:
-- Non-engineering roles (recruiters, designers, PMs, marketing, sales, executive search) score 1-2 MAX regardless of seniority or domain.
-- Roles requiring a specific language the candidate doesn't know (Rust, C++, Ruby, Scala, Clojure) as the PRIMARY requirement score 4-6 max depending on transferability.
-- "CTO" or "VP Engineering" roles that are purely management with no IC engineering component score 5-6 max.
-- LOCATION is N/A: check the description for any office/city requirement. If the description implies onsite in a specific US city outside Seattle/Bellevue/Kirkland/Redmond, cap at 7.
-- Distinguish REQUIRED skills from NICE-TO-HAVE. Only penalize for missing required skills.
-- Value transferable experience: workflow orchestration, distributed systems, microservices, developer platforms transfer across domains.
-
-You MUST include all four lines below. Do not skip REASONING.
-
-ELIGIBILITY: [eligible|non_us_only]
+Return exactly these four lines:
+ELIGIBILITY: [eligible|non_uk_only]
 SCORE: [1-10]
-KEYWORDS: [comma-separated ATS keywords from the job description that match or could match the candidate]
-REASONING: [2-3 sentences explaining the score, what matched well, and any gaps. If non_us_only, name the country/region.]"""
+KEYWORDS: [comma-separated relevant ATS keywords that are genuinely supported or clearly adjacent to the candidate's evidence]
+REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions and any critical eligibility questions.]
 
 
 # ── Rule-based pre-filter (catches obvious ineligible before LLM call) ─────
@@ -186,25 +179,14 @@ _DESC_SCAN_CHARS = 6000
 
 
 def _check_ineligible(job: dict) -> str | None:
-    """Return an ineligibility reason if the job is obviously non-US, else None.
+    """Do not pre-filter by geography or seniority.
 
-    Checked before the LLM call to save tokens and ensure consistency.
-    Scans title, location field, and the first ``_DESC_SCAN_CHARS`` of the
-    description.
+    This fork targets UK-based junior data roles. The previous upstream
+    pre-filter hard-coded US residency and excluded junior titles, which
+    would incorrectly reject the intended search results. The LLM prompt
+    now evaluates UK location restrictions with the candidate context.
     """
-    title = job.get("title") or ""
-    location = job.get("location") or ""
-    desc_head = (job.get("full_description") or "")[:_DESC_SCAN_CHARS]
-
-    if _INELIGIBLE_TITLE_PATTERNS.search(title):
-        return f"non-US geography in title: {title}"
-    if location and _INELIGIBLE_LOCATION_PATTERNS.search(location):
-        return f"non-US location field: {location}"
-    m = _INELIGIBLE_DESC_PATTERNS.search(desc_head)
-    if m:
-        return f"non-US geography in description: {m.group(0)[:80]}"
     return None
-
 
 def _parse_score_response(response: str) -> dict:
     """Parse the LLM's score response into structured data.
