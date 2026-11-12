@@ -41,6 +41,8 @@ def configured_remote_countries() -> tuple[str, ...]:
         from applypilot.config import load_search_config
         cfg = load_search_config() or {}
         countries = cfg.get("allowed_remote_countries", DEFAULT_ALLOWED_REMOTE_COUNTRIES)
+        if isinstance(countries, str):
+            countries = [countries]
         return tuple(str(country).strip() for country in countries if str(country).strip())
     except (OSError, TypeError, ValueError, yaml.YAMLError):
         return DEFAULT_ALLOWED_REMOTE_COUNTRIES
@@ -54,19 +56,25 @@ def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool
     text = _clean(location)
     if not text:
         return False
-    allowed = set()
+    allowed_terms = set()
     for configured in allowed_values:
         configured_name = str(configured).strip().casefold()
+        if not configured_name:
+            continue
+        matched_alias = False
         for canonical, aliases in _COUNTRY_ALIASES.items():
             if configured_name == canonical.casefold() or configured_name in {a.casefold() for a in aliases}:
-                allowed.add(canonical.casefold())
-    for canonical, aliases in _COUNTRY_ALIASES.items():
-        if canonical.casefold() not in allowed:
-            continue
-        for alias in aliases:
-            pattern = r"(?<![a-z])" + re.escape(alias.casefold()) + r"(?![a-z])"
-            if re.search(pattern, text):
-                return True
+                allowed_terms.update(aliases)
+                matched_alias = True
+                break
+        if not matched_alias:
+            # Custom country names are supported without requiring a code change.
+            allowed_terms.add(str(configured).strip())
+
+    for term in allowed_terms:
+        pattern = r"(?<![a-z])" + re.escape(term.casefold()) + r"(?![a-z])"
+        if re.search(pattern, text):
+            return True
     return False
 
 
