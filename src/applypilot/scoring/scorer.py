@@ -224,7 +224,8 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                 (r["score"], f"{r['keywords']}\\n{r['reasoning']}", now, eligibility,
                  "eligible" if eligibility == "eligible" else "rejected",
                  None if eligibility == "eligible" else eligibility, r["url"]),
-            )            if eligibility != "eligible":
+            )
+            if eligibility != "eligible":
                 transition_state(conn, r["url"], "archived",
                                  reason=f"ineligible or unverified: {eligibility}",
                                  metadata={"score": r["score"],
