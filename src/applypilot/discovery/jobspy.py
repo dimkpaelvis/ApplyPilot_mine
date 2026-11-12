@@ -226,16 +226,9 @@ def _normalise_job_types(values) -> list[str]:
 
 
 def _remote_result_ok(row) -> bool:
-    """Return True only when remote workplace status is explicitly verified."""
-    value = row.get("is_remote")
-    if value is not None and str(value).strip().lower() not in {"", "nan", "none"}:
-        if isinstance(value, bool):
-            return value
-        if str(value).strip().lower() not in {"true", "1", "yes", "remote"}:
-            return False
-        return True
+    """Return True only when remote status is explicit and not hybrid/on-site."""
     return normalize_workplace_type(
-        None, None, str(row.get("location", "") or ""),
+        None, row.get("is_remote"), str(row.get("location", "") or ""),
         str(row.get("description", "") or ""),
     ) == "remote"
 
