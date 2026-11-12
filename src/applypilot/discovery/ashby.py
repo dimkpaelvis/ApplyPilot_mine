@@ -93,6 +93,9 @@ def scrape_one_employer(
             "employer_name": name,
             "employer_slug": slug,
             "posted_at": posting.get("publishedAt") or None,
+            "employment_type": posting.get("employmentType") or "",
+            "workplace_type": posting.get("workplaceType") or ("remote" if posting.get("isRemote") else ""),
+            "is_remote": posting.get("isRemote"),
         })
     return out, None
 
