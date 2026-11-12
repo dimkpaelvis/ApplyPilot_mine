@@ -927,7 +927,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "SELECT COUNT(*) FROM jobs "
         "WHERE fit_score >= ? AND full_description IS NOT NULL "
         "AND tailored_resume_path IS NULL "
-        "AND (eligibility IS NULL OR eligibility = 'eligible')",
+        "AND (eligibility = 'eligible')",
         (_DEFAULTS["min_score"],),
     ).fetchone()[0]
 
@@ -962,7 +962,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "WHERE tailored_resume_path IS NOT NULL "
         "AND applied_at IS NULL "
         "AND application_url IS NOT NULL "
-        "AND (eligibility IS NULL OR eligibility = 'eligible')"
+        "AND (eligibility = 'eligible')"
     ).fetchone()[0]
 
     stats["needs_human"] = conn.execute(
@@ -1561,27 +1561,25 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
         ),
         "scored": "fit_score IS NOT NULL",
         # 2026-04-30: gate every paid stage on eligibility.
-        # `non_us_only` rows are terminal-archived by the scorer and must
-        # never enter tailor/cover/apply. `eligibility IS NULL` covers
-        # legacy rows scored before the column existed (they pre-date the
-        # filter and pass through unchanged).
+        # Only explicitly eligible rows may enter tailor/cover/apply.
+        # Legacy NULL eligibility is unverified and must fail closed.
         "pending_tailor": (
             "fit_score >= ? AND full_description IS NOT NULL "
             "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5 "
-            "AND (eligibility IS NULL OR eligibility = 'eligible')"
+            "AND (eligibility = 'eligible')"
         ),
         "pending_cover": (
             "fit_score >= ? AND tailored_resume_path IS NOT NULL "
             "AND full_description IS NOT NULL "
             "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
             "AND COALESCE(cover_attempts, 0) < 5 "   # keep in sync with cover_letter.MAX_ATTEMPTS
-            "AND (eligibility IS NULL OR eligibility = 'eligible')"
+            "AND (eligibility = 'eligible')"
         ),
         "tailored": "tailored_resume_path IS NOT NULL",
         "pending_apply": (
             "tailored_resume_path IS NOT NULL AND applied_at IS NULL "
             "AND application_url IS NOT NULL "
-            "AND (eligibility IS NULL OR eligibility = 'eligible')"
+            "AND (eligibility = 'eligible')"
         ),
         "applied": "applied_at IS NOT NULL",
     }
