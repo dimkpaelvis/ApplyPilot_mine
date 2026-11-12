@@ -82,7 +82,7 @@ def convert(source: dict[str, Any]) -> dict[str, Any]:
         "availability": {
             "earliest_start_date": auth.get("notice_period", ""),
         },
-        "eeo_voluntary": source.get("languages", {}),
+        "eeo_voluntary": source.get("eeo_voluntary") or {\n            "gender": "Decline to self-identify",\n            "ethnicity": "Decline to self-identify",\n            "veteran_status": "Decline to self-identify",\n            "disability_status": "Decline to self-identify",\n        },
         # Retain the richer source sections for future prompts and auditing.
         "candidate_headline": source.get("headline", ""),
         "candidate_summary": source.get("summary", ""),
