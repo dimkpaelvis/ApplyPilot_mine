@@ -1,35 +1,42 @@
-# UK-focused search profile for entry-level data and reporting roles.
+# Remote English-speaking-market search profile for entry-level data and reporting roles.
 # Copy this file to ~/.applypilot/searches.yaml before running discovery.
 
 defaults:
-  location: "United Kingdom"
+  location: "Remote"
   distance: 0
   hours_old: 72
   results_per_site: 50
 
 locations:
-  - location: "United Kingdom"
+  - location: "Remote"
     remote: true
 
-# Remote roles are retained by the discovery filter. Non-remote roles should
-# be UK-based; inspect the full description for location and right-to-work rules.
+# Remote roles must identify one of the allowlisted countries above. A generic
+# 'Remote'/'Worldwide' location is unverified and is not admitted to the pipeline.
+allowed_remote_countries:
+  - "United Kingdom"
+  - "Ireland"
+  - "United States"
+  - "Canada"
+  - "Australia"
+  - "New Zealand"
+  - "South Africa"
+  - "Singapore"
+
 location_accept:
   - "United Kingdom"
   - "UK"
-  - "England"
-  - "Scotland"
-  - "Wales"
-  - "Northern Ireland"
-location_reject_non_remote:
+  - "Ireland"
   - "United States"
   - "USA"
   - "Canada"
-  - "India"
   - "Australia"
-  - "Germany"
-  - "France"
-  - "Netherlands"
+  - "New Zealand"
+  - "South Africa"
   - "Singapore"
+location_reject_non_remote:
+  - "onsite only"
+  - "on-site only"
 
 queries:
   - query: "Junior Data Analyst"
