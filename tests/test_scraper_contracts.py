@@ -90,7 +90,7 @@ def test_jobspy_long_description_lands_in_enriched(tmp_db):
         "currency": None,
         "description": long_desc,
         "site": "linkedin",
-        "is_remote": False,
+        "is_remote": True,
         "job_url_direct": None,
         "date_posted": None,
     }])
