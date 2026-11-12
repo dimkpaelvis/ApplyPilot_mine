@@ -604,9 +604,23 @@ def _full_crawl(
     locs = search_cfg.get("locations", [])
     defaults = dict(search_cfg.get("defaults", {}) or {})
     # Country scope is top-level so it is easy to review and edit in searches.yaml.
-    defaults["allowed_remote_countries"] = search_cfg.get(
-        "allowed_remote_countries", defaults.get("allowed_remote_countries", [])
+    # Older user configs predate this setting; apply the new safe default and
+    # broaden the exact legacy UK-remote location to a global remote query.
+    configured_countries = search_cfg.get(
+        "allowed_remote_countries", defaults.get("allowed_remote_countries")
     )
+    if configured_countries is None:
+        configured_countries = list(configured_remote_countries())
+        if defaults.get("remote_only", True):
+            for location_cfg in search_cfg.get("locations", []):
+                legacy_location = str(location_cfg.get("location", "")).strip().casefold()
+                if legacy_location in {"remote - united kingdom", "remote - uk"}:
+                    location_cfg["location"] = "Remote"
+            log.info(
+                "Legacy remote search config detected: broadened UK-only search location to Remote; "
+                "country allowlist remains enforced."
+            )
+    defaults["allowed_remote_countries"] = configured_countries
     glassdoor_map = search_cfg.get("glassdoor_location_map", {})
     accept_locs, reject_locs = _load_location_config(search_cfg)
 
