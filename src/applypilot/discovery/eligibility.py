@@ -23,7 +23,7 @@ DEFAULT_ALLOWED_REMOTE_COUNTRIES = (
 _COUNTRY_ALIASES = {
     "United Kingdom": ("United Kingdom", "UK", "Great Britain", "England", "Scotland", "Wales", "Northern Ireland"),
     "Ireland": ("Ireland", "Republic of Ireland"),
-    "United States": ("United States", "United States of America", "USA", "US", "U.S.", "America"),
+    "United States": ("United States", "United States of America", "USA", "US", "U.S.", ),
     "Canada": ("Canada",),
     "Australia": ("Australia",),
     "New Zealand": ("New Zealand",),
@@ -52,7 +52,12 @@ def remote_country_allowed(location: Any, allowed_countries: Any = None) -> bool
     text = _clean(location)
     if not text:
         return False
-    allowed = {str(country).strip().casefold() for country in allowed_values}
+    allowed = set()
+    for configured in allowed_values:
+        configured_name = str(configured).strip().casefold()
+        for canonical, aliases in _COUNTRY_ALIASES.items():
+            if configured_name == canonical.casefold() or configured_name in {a.casefold() for a in aliases}:
+                allowed.add(canonical.casefold())
     for canonical, aliases in _COUNTRY_ALIASES.items():
         if canonical.casefold() not in allowed:
             continue
