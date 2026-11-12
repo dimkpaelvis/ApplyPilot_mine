@@ -55,7 +55,11 @@ def normalize_workplace_type(value: Any = None, is_remote: Any = None,
     if isinstance(is_remote, bool):
         if is_remote:
             return "remote"
-        # An explicit false remote flag is not enough to distinguish onsite/hybrid.
+        if raw in {"hybrid", "hybrid remote"}:
+            return "hybrid"
+        if raw in {"on-site", "onsite", "office", "in-person", "in person"}:
+            return "onsite"
+        return "unknown"
     if raw in {"remote", "fully remote", "fully-remote", "distributed"}:
         return "remote"
     if raw in {"hybrid", "hybrid remote"}:
