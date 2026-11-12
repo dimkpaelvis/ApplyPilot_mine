@@ -14,6 +14,7 @@ from datetime import datetime, timedelta, timezone
 from applypilot.config import RESUME_PATH, load_profile
 from applypilot.database import get_connection, get_jobs_by_stage, write_with_retry
 from applypilot.discovery.eligibility import classify_job_eligibility
+from applypilot.matching import evaluate_job_match
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ CANDIDATE PROFILE:
 {candidate_summary}
 
 LOCATION AND ELIGIBILITY:
-The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. On-site and hybrid roles are not suitable; mark them ELIGIBILITY: non_remote_only. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If location eligibility is unclear, use eligible and explain the uncertainty.
+The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. On-site and hybrid roles are not suitable; mark them ELIGIBILITY: non_remote_only. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If UK applicant eligibility is unclear, use unverified; never assume UK applicants are accepted from a generic Remote label. Explicit timezone or country-specific work-authorisation requirements must be flagged for review unless the candidate profile establishes a match.
 
 EMPLOYMENT TYPE:
 The candidate wants PART-TIME and FREELANCE/CONTRACT work. Full-time roles are not suitable and must be marked ELIGIBILITY: full_time_only when the posting explicitly identifies the role as full-time. Treat freelance, freelancer, independent contractor and contract engagements as contract work. Do not mistake a full-time role's mention of flexible hours, remote work, or a part-time team member for a part-time vacancy. If employment type is not stated, return ELIGIBILITY: unverified; do not assume it is part-time. If workplace type is not explicitly remote, return ELIGIBILITY: unverified or non_remote_only as appropriate. Never mark an unknown employment or workplace type eligible. This eligibility label does not establish the candidate's right to work or visa status.
@@ -207,7 +208,9 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
 
         client = get_client()
         response = client.chat(messages, max_tokens=8192, temperature=0.2)
-        return _parse_score_response(response)
+        result = _parse_score_response(response)
+        result.update(evaluate_job_match(job, profile, fit_score=result.get("score")))
+        return result
     except Exception as e:
         log.error("LLM error scoring job '%s': %s", (job or {}).get("title") or "?", e)
         return {"score": None, "keywords": "", "reasoning": "", "eligibility": None,
@@ -239,13 +242,27 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
             conn.execute(
                 "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ?, "
                 "eligibility = ?, eligibility_status = ?, eligibility_reason = ?, "
+                "applicant_eligibility = ?, applicant_eligibility_reason = ?, "
+                "candidate_suitability = ?, suitability_score = ?, flexible_score = ?, "
+                "suitability_reason = ?, flexible_criteria_met = ?, decision_route = ?, "
+                "auto_apply_qualified = ?, "
                 "score_error = NULL, score_attempts = 0, score_next_retry_at = NULL "
                 "WHERE url = ?",
                 (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
                  "eligible" if eligibility == "eligible" else (
                      "unverified" if eligibility == "unverified" else "rejected"
                  ),
-                 None if eligibility == "eligible" else eligibility, r["url"]),
+                 None if eligibility == "eligible" else eligibility,
+                 r.get("applicant_eligibility", "unverified"),
+                 r.get("applicant_eligibility_reason"),
+                 r.get("candidate_suitability", "review"),
+                 r.get("suitability_score", 50),
+                 r.get("flexible_score", 0),
+                 r.get("suitability_reason"),
+                 r.get("flexible_criteria_met", 0),
+                 r.get("decision_route", "review_required"),
+                 r.get("auto_apply_qualified", 0),
+                 r["url"]),
             )
             if eligibility != "eligible":
                 transition_state(conn, r["url"], "archived",

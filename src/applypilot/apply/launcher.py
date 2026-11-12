@@ -1568,6 +1568,8 @@ def acquire_job(target_url: str | None = None,
                   AND j.application_url IS NOT NULL
                   AND j.application_url != ''
                   AND (j.eligibility = 'eligible' AND j.eligibility_status = 'eligible')
+                  AND j.applicant_eligibility = 'eligible'
+                  AND j.candidate_suitability = 'suitable'
                   {max_score_filter}
                   AND {site_filter}
                   AND {url_filter}

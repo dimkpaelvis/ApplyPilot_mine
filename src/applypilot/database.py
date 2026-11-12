@@ -296,6 +296,15 @@ _ALL_COLUMNS: dict[str, str] = {
     "workplace_type": "TEXT",                 # remote | hybrid | onsite | unknown
     "eligibility_status": "TEXT DEFAULT 'unverified'",
     "eligibility_reason": "TEXT",
+    "applicant_eligibility": "TEXT",
+    "applicant_eligibility_reason": "TEXT",
+    "candidate_suitability": "TEXT",
+    "suitability_score": "INTEGER",
+    "flexible_score": "INTEGER",
+    "suitability_reason": "TEXT",
+    "flexible_criteria_met": "INTEGER DEFAULT 0",
+    "decision_route": "TEXT",
+    "auto_apply_qualified": "INTEGER DEFAULT 0",
     # Canonical pipeline state. Enum enforced in Python (see VALID_STATES)
     # rather than a SQL CHECK — SQLite can't easily add CHECKs post-hoc.
     "state": "TEXT DEFAULT 'discovered'",
