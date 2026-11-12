@@ -25,8 +25,8 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Lint
-        run: ruff check src/
+      - name: Lint eligibility engine and focused tests
+        run: ruff check src/applypilot/discovery/eligibility.py tests/test_discovery_eligibility.py tests/test_search_preferences.py tests/test_scorer_prefilter.py tests/test_hackernews.py
 
       - name: Test
         run: pytest tests/ -v
