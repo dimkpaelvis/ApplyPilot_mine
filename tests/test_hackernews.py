@@ -179,7 +179,8 @@ class TestStoreHnJob(unittest.TestCase):
         _store_hn_job(
             self.conn,
             {"url": "https://company.com/jobs/sre", "title": "SRE", "company": "Acme",
-             "description": "Part-time remote role.", "remote": True, "employment_type": "parttime"},
+             "description": "Part-time remote role.", "location": "Remote - United Kingdom",
+             "remote": True, "employment_type": "parttime"},
             "Who is Hiring? (March 2026)",
             posted_at="2026-03-02T17:30:00+00:00",
         )
