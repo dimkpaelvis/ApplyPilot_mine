@@ -185,7 +185,7 @@ def classify_job_eligibility(job: dict, allowed_employment: set[str] | None = No
         reasons.append("workplace_type_unverified")
     elif require_remote and workplace != "remote":
         reasons.append(f"workplace_type_{workplace}")
-    elif require_remote and not remote_country_allowed(job.get("location")):
+    elif require_remote and not remote_country_allowed(job.get("location"), description=description):
         # A generic "Remote" label does not establish the country in which
         # the employer permits the worker to be based. Fail closed.
         reasons.append("remote_country_unverified")
