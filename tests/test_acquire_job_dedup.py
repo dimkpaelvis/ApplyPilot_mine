@@ -273,3 +273,26 @@ def test_acquire_rejects_unverified_eligibility(tmp_db, seed_job, monkeypatch):
     )
 
     assert acquire_job(min_score=8, max_age_days=0) is None
+
+
+
+def test_acquire_rejects_legacy_eligible_with_unverified_normalized_status(
+    tmp_db, seed_job, monkeypatch
+):
+    """A stale legacy 'eligible' flag cannot override normalized unverified status."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="legacy-eligible-unverified",
+        application_url="https://boards.greenhouse.io/acme/jobs/legacy",
+        apply_status=None,
+        fit_score=10,
+        eligibility="eligible",
+        eligibility_status="unverified",
+        employment_type="unknown",
+        workplace_type="unknown",
+    )
+
+    assert acquire_job(min_score=8, max_age_days=0) is None
