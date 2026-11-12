@@ -88,7 +88,7 @@ def seed_job():
             "title": "Senior Software Engineer",
             "description": "A job.",
             "full_description": "A full description.",
-            "location": "Remote - United Kingdom",
+            "location": "Remote (US)",
             "site": "linkedin",
             "employment_type": "part_time",
             "workplace_type": "remote",
