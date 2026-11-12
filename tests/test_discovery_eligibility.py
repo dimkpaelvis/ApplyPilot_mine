@@ -12,7 +12,8 @@ from applypilot.discovery.eligibility import (
     normalize_employment_type,
     normalize_workplace_type,
 )
-from applypilot.discovery import ats_common, greenhouse, lever, ashby
+from applypilot.discovery import ats_common, greenhouse, lever, ashby, workday, jobspy
+import pandas as pd
 
 
 @pytest.fixture
@@ -152,3 +153,53 @@ def test_ats_insert_filters_before_database_and_deduplicates_cross_board(db):
     assert ats_common.insert_normalized_jobs(db, [eligible], "Lever", "lever_api") == (0, 1)
     rows = db.execute("SELECT url, employment_type, workplace_type FROM jobs").fetchall()
     assert rows == [("https://jobs.example/shared-role", "part_time", "remote")]
+
+
+
+def test_workday_store_uses_detail_employment_and_remote_fields(db):
+    eligible = {
+        "apply_url": "https://jobs.example/workday/part-time-remote",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "time_type": "Part Time",
+        "remote_type": "Remote",
+        "full_description": "Part-time remote data analyst position.",
+    }
+    unknown = {
+        "apply_url": "https://jobs.example/workday/unknown",
+        "title": "Data Analyst",
+        "location": "",
+        "time_type": "",
+        "remote_type": "",
+        "full_description": "Data analyst position.",
+    }
+    assert workday.store_results(db, [eligible, unknown], {}) == (1, 0)
+    row = db.execute(
+        "SELECT employment_type, workplace_type, eligibility_status FROM jobs"
+    ).fetchone()
+    assert row == ("part_time", "remote", "eligible")
+
+
+def test_jobspy_store_filters_and_persists_normalized_fields(db):
+    frame = pd.DataFrame([{
+        "job_url": "https://jobs.example/jobspy/part-time-remote",
+        "title": "Part-time Data Analyst",
+        "job_type": "parttime",
+        "is_remote": True,
+        "location": "United Kingdom",
+        "description": "Part-time remote data analyst role with SQL.",
+        "site": "Indeed",
+    }, {
+        "job_url": "https://jobs.example/jobspy/unknown",
+        "title": "Data Analyst",
+        "job_type": None,
+        "is_remote": None,
+        "location": None,
+        "description": "Data analyst role.",
+        "site": "Indeed",
+    }])
+    assert jobspy.store_jobspy_results(db, frame, "Indeed") == (1, 0)
+    row = db.execute(
+        "SELECT employment_type, workplace_type, eligibility_status FROM jobs"
+    ).fetchone()
+    assert row == ("part_time", "remote", "eligible")
