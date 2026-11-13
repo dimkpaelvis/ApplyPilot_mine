@@ -139,7 +139,7 @@ def test_daily_cap_does_not_count_manual_tracking_stubs(tmp_db, monkeypatch):
 
     assert (new, duplicates) == (1, 0)
     assert conn.execute(
-        "SELECT COUNT(*) FROM jobs WHERE strategy IS NOT NULL AND discovered_at >= ?",
+        "SELECT COUNT(*) FROM jobs WHERE site IS NOT NULL AND LOWER(TRIM(site)) <> 'manual' AND discovered_at >= ?",
         (now[:10],),
     ).fetchone()[0] == 1
 
@@ -308,3 +308,32 @@ def test_direct_adapter_canonicalizes_embedded_ats_url_before_deduplication(tmp_
         "SELECT company FROM jobs WHERE url = ?", (canonical_url,)
     ).fetchone()
     assert row["company"] == "Stripe"
+
+def test_daily_cap_counts_legacy_discovery_rows_without_strategy(tmp_db, monkeypatch):
+    from datetime import UTC, datetime
+
+    from applypilot import config
+    from applypilot.database import store_jobs
+
+    monkeypatch.setattr(
+        config,
+        "load_search_config",
+        lambda: {"defaults": {"daily_unique_job_limit": 1, "daily_unique_timezone": "Europe/London"}},
+    )
+    conn = tmp_db()
+    now = datetime.now(UTC).isoformat()
+    conn.execute(
+        "INSERT INTO jobs (url, title, site, discovered_at) VALUES (?, ?, ?, ?)",
+        ("https://indeed.com/legacy/1", "Legacy discovered role", "indeed", now),
+    )
+    conn.commit()
+
+    new, duplicates = store_jobs(
+        conn,
+        [{"url": "https://example.com/jobs/2", "title": "New discovered role"}],
+        "test",
+        "jobspy",
+    )
+
+    assert (new, duplicates) == (0, 0)
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
