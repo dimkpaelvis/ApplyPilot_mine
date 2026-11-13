@@ -28,6 +28,7 @@ import yaml
 
 from applypilot.config import CONFIG_DIR
 from applypilot.database import (
+    canonicalize_discovery_url,
     check_discovery_admission,
     get_daily_discovery_quota_window,
     get_connection,
@@ -117,6 +118,7 @@ def insert_normalized_jobs(
             url = job.get("url")
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
             eligibility = classify_job_eligibility(job, require_remote=True)
             if eligibility["eligibility_status"] != "eligible":
                 log.debug("Filtered %s before insert: %s", url, eligibility["eligibility_reason"])
