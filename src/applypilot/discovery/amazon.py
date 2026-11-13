@@ -21,7 +21,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
@@ -193,12 +193,14 @@ def search_amazon_jobs(
 # ── DB insert ─────────────────────────────────────────────────────────
 
 def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
     now = datetime.now(timezone.utc).isoformat()
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
         for job in jobs:
             url = job.get("url")
             if not url:
@@ -210,6 +212,9 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             detail_scraped_at = now if full_description else None
             posted_at = job.get("posted_date") or None
             initial_state = "enriched" if full_description else "discovered"
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
