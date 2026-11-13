@@ -27,8 +27,23 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Lint eligibility engine and focused tests
-        run: ruff check src/applypilot/discovery/eligibility.py src/applypilot/integrations/google_sheets.py tests/test_google_sheets.py tests/test_discovery_daily_cap.py
+      - name: Lint database and discovery quota paths
+        run: >-
+          ruff check
+          src/applypilot/database.py
+          src/applypilot/discovery/eligibility.py
+          src/applypilot/discovery/jobspy.py
+          src/applypilot/discovery/workday.py
+          src/applypilot/discovery/ats_common.py
+          src/applypilot/discovery/amazon.py
+          src/applypilot/discovery/costco.py
+          src/applypilot/discovery/builtin.py
+          src/applypilot/discovery/smartextract.py
+          src/applypilot/discovery/hackernews.py
+          src/applypilot/integrations/google_sheets.py
+          tests/test_google_sheets.py
+          tests/test_discovery_daily_cap.py
+          tests/test_scraper_contracts.py
 
       - name: Full regression suite (all discovery and application tests)
         run: pytest tests/ -v
