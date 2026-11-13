@@ -462,7 +462,8 @@ def _process_one(
     log.info("%s: %d new, %d already in DB", emp["name"], new, existing)
 
     return {"employer": emp["name"], "query": search_text,
-            "found": len(jobs), "new": new, "existing": existing}
+            "found": summary_count, "summary_filtered": skipped_summary,
+            "new": new, "existing": existing}
 
 
 # -- Main orchestrator -------------------------------------------------------
