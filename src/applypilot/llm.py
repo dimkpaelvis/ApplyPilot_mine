@@ -197,7 +197,7 @@ def _extract_openai_compat_text(data: object) -> str:
             and block.get("type") in ("text", "output_text")
             and isinstance(block.get("text"), str)
         ]
-        result = "\\n".join(part.strip() for part in parts if part.strip())
+        result = "\n".join(part.strip() for part in parts if part.strip())
     else:
         result = ""
     if not result:
