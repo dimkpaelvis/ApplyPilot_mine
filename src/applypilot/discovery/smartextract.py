@@ -143,6 +143,13 @@ def _store_jobs_filtered(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                company = str(job.get("company") or "").strip() or None
+                if company:
+                    conn.execute(
+                        "UPDATE jobs SET company = ?, site = 'smartextract' "
+                        "WHERE url = ? AND strategy = ? AND (company IS NULL OR TRIM(company) = '')",
+                        (company, url, strategy),
+                    )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
