@@ -1234,31 +1234,18 @@ def _resolve_url(url: str, site: str) -> str | None:
     return None
 
 
-def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
-               site: str, strategy: str) -> tuple[int, int]:
-    """Store discovered jobs, skipping duplicates by URL.
+def get_daily_discovery_quota_window() -> tuple[int, str]:
+    """Return the configured daily limit and this local day's UTC start.
 
-    Relative URLs are resolved to absolute using base_urls from sites.yaml.
-    Jobs with unresolvable relative URLs are skipped.
-
-    Args:
-        conn: Database connection.
-        jobs: List of job dicts with keys: url, title, salary, description, location.
-        site: Source site name (e.g. "RemoteOK", "Dice").
-        strategy: Extraction strategy used (e.g. "json_ld", "api_response", "css_selectors").
-
-    Returns:
-        Tuple of (new_count, duplicate_count).
+    A limit of 0 (or a negative value, preserving legacy behavior) disables
+    the cap. The window is computed once per discovery batch so a run that
+    crosses midnight does not change its admission rules halfway through.
     """
-    now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0, "capped": 0}
-
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     from applypilot.config import load_search_config
-    from applypilot.discovery.url_normalize import canonicalize_application_url
 
     search_config = load_search_config() or {}
-    defaults = search_config.get("defaults", {})
+    defaults = search_config.get("defaults", {}) or {}
     daily_limit = int(defaults.get("daily_unique_job_limit", 50))
     timezone_name = str(defaults.get("daily_unique_timezone", "Europe/London"))
     try:
@@ -1266,33 +1253,84 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     except ZoneInfoNotFoundError:
         _log.warning("Invalid daily_unique_timezone %r; using UTC.", timezone_name)
         local_tz = timezone.utc
-    local_midnight = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
-    day_start_utc = local_midnight.astimezone(timezone.utc).isoformat()
+    local_midnight = datetime.now(local_tz).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return daily_limit, local_midnight.astimezone(timezone.utc).isoformat()
+
+
+def check_discovery_admission(
+    conn: sqlite3.Connection,
+    url: str,
+    quota_window: tuple[int, str] | None = None,
+) -> str:
+    """Check whether a discovery adapter may insert a new unique job.
+
+    Returns one of: "allowed", "existing", or "capped". Every discovery
+    adapter must call this immediately before INSERT.
+
+    For an enabled quota, BEGIN IMMEDIATE serializes the count-and-insert
+    decision across concurrent discovery workers/processes. The caller's
+    write_with_retry() owns commit/rollback and retries the whole batch.
+    Existing URLs are checked before the cap, so duplicates never consume
+    quota and can still be repaired by the caller.
+    """
+    if quota_window is None:
+        quota_window = get_daily_discovery_quota_window()
+    daily_limit, day_start_utc = quota_window
+
+    if daily_limit > 0 and not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+
+    if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone():
+        return "existing"
+
+    if daily_limit <= 0:
+        return "allowed"
+
+    daily_count = conn.execute(
+        "SELECT COUNT(*) FROM jobs "
+        "WHERE discovered_at >= ? AND strategy IS NOT NULL",
+        (day_start_utc,),
+    ).fetchone()[0]
+    return "capped" if daily_count >= daily_limit else "allowed"
+
+
+def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
+               site: str, strategy: str) -> tuple[int, int]:
+    """Store discovered jobs, skipping duplicates and enforcing the global cap.
+
+    Relative URLs are resolved to absolute using base_urls from sites.yaml.
+    Jobs with unresolvable relative URLs are skipped. The daily cap is shared
+    with every other discovery adapter, not just this generic storage path.
+
+    Returns:
+        Tuple of (new_count, duplicate_count). Capped jobs are logged.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    counts = {"new": 0, "existing": 0, "capped": 0}
+
+    from applypilot.discovery.url_normalize import canonicalize_application_url
+
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts.update({"new": 0, "existing": 0, "capped": 0})
-        daily_count = conn.execute(
-            "SELECT COUNT(*) FROM jobs WHERE discovered_at >= ?", (day_start_utc,)
-        ).fetchone()[0]
         for job in jobs:
             url = job.get("url")
             if not url:
                 continue
 
-            # Normalize relative URLs to absolute
             url = _resolve_url(url, site) or url
-            # Skip URLs that are still relative (unresolvable)
             if not url.startswith("http://") and not url.startswith("https://"):
                 continue
-            # Rewrite embedded-ATS URLs (e.g. Databricks ?gh_jid → canonical
-            # Greenhouse) so the apply agent never sees the iframe parent.
             url = canonicalize_application_url(url)
 
-            # Duplicates do not consume the daily quota.
-            if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone():
+            admission = check_discovery_admission(conn, url, quota_window)
+            if admission == "existing":
                 counts["existing"] += 1
                 continue
-            if daily_limit > 0 and daily_count >= daily_limit:
+            if admission == "capped":
                 counts["capped"] += 1
                 continue
 
@@ -1304,21 +1342,19 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                      job.get("location"), site, strategy, now),
                 )
             except sqlite3.IntegrityError:
-                # Preserve duplicate safety if another discovery worker inserted
-                # the same canonical URL after the pre-check above.
-                counts["existing"] += 1
-                continue
+                if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone():
+                    counts["existing"] += 1
+                    continue
+                raise
             counts["new"] += 1
-            daily_count += 1
 
     write_with_retry(conn, _do_inserts)
     if counts["capped"]:
         _log.warning(
             "Daily unique-job discovery limit reached (%d). Skipped %d additional new listing(s).",
-            daily_limit, counts["capped"],
+            quota_window[0], counts["capped"],
         )
     return counts["new"], counts["existing"]
-
 
 def store_account(conn: sqlite3.Connection, account: dict,
                   job_url: str | None = None) -> None:
