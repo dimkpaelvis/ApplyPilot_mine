@@ -265,13 +265,11 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
-                if company:
-                    conn.execute(
-                        "UPDATE jobs SET company = ?, site = 'builtin' "
-                        "WHERE url = ? AND strategy = 'builtin_html' "
-                        "AND (company IS NULL OR TRIM(company) = '')",
-                        (company, url),
-                    )
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'builtin' "
+                    "WHERE url = ? AND strategy = 'builtin_html'",
+                    (company, url),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
