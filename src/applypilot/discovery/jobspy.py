@@ -50,7 +50,7 @@ except Exception:
     pass  # If patching fails, fall back to original behavior
 
 from applypilot import config
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, write_with_retry)
 from applypilot.discovery.eligibility import (
     classify_job_eligibility,
     configured_remote_countries,
@@ -251,13 +251,15 @@ def _employment_type_ok(row, allowed_types: list[str]) -> bool:
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
     """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
+    quota_window = get_daily_discovery_quota_window()
 
     rows_iter = list(df.iterrows())
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
         for _, row in rows_iter:
             url = str(row.get("job_url", ""))
             if not url or url == "nan":
@@ -327,6 +329,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                     posted_at = None
 
             initial_state = "enriched" if full_description else "discovered"
+
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
 
             try:
                 conn.execute(
