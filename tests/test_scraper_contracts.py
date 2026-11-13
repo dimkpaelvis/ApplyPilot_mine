@@ -384,3 +384,45 @@ def test_workday_stores_posted_at_from_start_date(tmp_db):
         ("https://corp.wd1.myworkdayjobs.com/jobs/DE-1",),
     ).fetchone()
     assert row["posted_at"] is None
+
+def test_jobspy_duplicate_backfills_missing_company_without_overwriting_known_value(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.jobspy import store_jobspy_results
+    import pandas as pd
+
+    base = {
+        "job_url": "https://indeed.com/job/company-backfill",
+        "title": "Part-time Data Analyst",
+        "company": None,
+        "location": "Remote - United Kingdom",
+        "job_type": "parttime",
+        "min_amount": None,
+        "max_amount": None,
+        "interval": None,
+        "currency": None,
+        "description": "x" * 250,
+        "site": "indeed",
+        "is_remote": True,
+        "job_url_direct": None,
+        "date_posted": None,
+    }
+
+    new, existing = store_jobspy_results(conn, pd.DataFrame([base]), "test-query")
+    assert (new, existing) == (1, 0)
+
+    enriched = {**base, "company": "Acme Analytics"}
+    new, existing = store_jobspy_results(conn, pd.DataFrame([enriched]), "test-query")
+    assert (new, existing) == (0, 1)
+
+    row = conn.execute(
+        "SELECT company FROM jobs WHERE url = ?", (base["job_url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+
+    # A later duplicate with no company metadata must not erase the backfill.
+    new, existing = store_jobspy_results(conn, pd.DataFrame([base]), "test-query")
+    assert (new, existing) == (0, 1)
+    row = conn.execute(
+        "SELECT company FROM jobs WHERE url = ?", (base["job_url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
