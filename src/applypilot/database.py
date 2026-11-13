@@ -1308,7 +1308,8 @@ def check_discovery_admission(
     if quota_window["daily_count"] is None:
         quota_window["daily_count"] = conn.execute(
             "SELECT COUNT(*) FROM jobs "
-            "WHERE discovered_at >= ? AND strategy IS NOT NULL",
+            "WHERE discovered_at >= ? AND site IS NOT NULL "
+            "AND LOWER(TRIM(site)) <> 'manual'",
             (quota_window["day_start_utc"],),
         ).fetchone()[0]
 
