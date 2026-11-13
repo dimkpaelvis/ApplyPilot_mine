@@ -30,7 +30,17 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 from applypilot import config
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (
+    canonicalize_discovery_url,
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    get_connection,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
@@ -224,16 +234,20 @@ def _parse_listing_page(html: str) -> list[dict]:
 
 
 def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
     now = datetime.now(timezone.utc).isoformat()
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             url = job.get("url")
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
             eligibility = classify_job_eligibility({
                 **job, "workplace_type": job.get("work_mode"),
             }, require_remote=True)
@@ -243,6 +257,9 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             company = str(job.get("employer_name") or "").strip() or None
             description = job.get("description")
             initial_state = "discovered"
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, "
@@ -264,15 +281,18 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                     (url, initial_state, now, "discovered via builtin_html", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'builtin' "
-                    "WHERE url = ? AND strategy = 'builtin_html'",
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = 'builtin_html' THEN 'builtin' ELSE site END "
+                    "WHERE url = ?",
                     (company, url),
                 )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("BuiltIn", counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 

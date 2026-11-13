@@ -50,7 +50,17 @@ except Exception:
     pass  # If patching fails, fall back to original behavior
 
 from applypilot import config
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (
+    canonicalize_discovery_url,
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    get_connection,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import (
     classify_job_eligibility,
     configured_remote_countries,
@@ -251,17 +261,21 @@ def _employment_type_ok(row, allowed_types: list[str]) -> bool:
 def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tuple[int, int]:
     """Store JobSpy DataFrame results into the DB. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
+    quota_window = get_daily_discovery_quota_window()
 
     rows_iter = list(df.iterrows())
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for _, row in rows_iter:
             url = str(row.get("job_url", ""))
             if not url or url == "nan":
                 continue
+            url = canonicalize_discovery_url(url)
             eligibility = classify_job_eligibility({
                 "title": row.get("title"),
                 "job_type": row.get("job_type"),
@@ -328,6 +342,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
 
             initial_state = "enriched" if full_description else "discovered"
 
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
+
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
@@ -346,6 +364,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                     (url, initial_state, now, f"discovered via {strategy}", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 # A duplicate URL may have been discovered previously without
                 # employer metadata. Backfill only a missing company; never
@@ -359,6 +378,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("JobSpy", counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 

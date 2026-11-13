@@ -25,7 +25,16 @@ from datetime import datetime, timezone
 import httpx
 
 from applypilot import config
-from applypilot.database import init_db, write_with_retry
+from applypilot.database import (
+    canonicalize_discovery_url,
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
@@ -200,6 +209,7 @@ def _store_hn_job(
         slug = re.sub(r'[^a-z0-9]+', '-', f"{company}-{title}".lower()).strip('-')
         url = f"https://news.ycombinator.com/item?id={slug}"
 
+    url = canonicalize_discovery_url(url)
     title = job.get("title") or "Unknown Role"
     company_value = str(job.get("company") or "").strip()
     company = None if company_value.casefold() in {"", "unknown", "unknown company", "n/a", "none"} else company_value
@@ -225,9 +235,16 @@ def _store_hn_job(
         return False
 
     integrity_failed = {"v": False}
+    capped = {"v": False}
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         integrity_failed["v"] = False
+        capped["v"] = False
+        reset_discovery_quota_window(quota_window)
+        if check_discovery_admission(conn, url, quota_window) == "capped":
+            capped["v"] = True
+            return
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
@@ -245,16 +262,19 @@ def _store_hn_job(
                 "VALUES (?, NULL, ?, ?, ?, ?)",
                 (url, initial_state, now, "discovered via hackernews", None),
             )
+            record_discovery_insert(quota_window)
         except sqlite3.IntegrityError:
             conn.execute(
-                "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'hackernews' "
-                "WHERE url = ? AND strategy = 'hackernews'",
+                "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                "site = CASE WHEN strategy = 'hackernews' THEN 'hackernews' ELSE site END "
+                "WHERE url = ?",
                 (company, url),
             )
             integrity_failed["v"] = True
 
     write_with_retry(conn, _do_inserts)
-    return not integrity_failed["v"]
+    log_discovery_quota_capped("Hacker News", int(capped["v"]), quota_window)
+    return not integrity_failed["v"] and not capped["v"]
 
 
 def run_hn_discovery(

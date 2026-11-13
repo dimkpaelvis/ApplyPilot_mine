@@ -22,7 +22,17 @@ import yaml
 
 from applypilot import config
 from applypilot.config import CONFIG_DIR
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (
+    canonicalize_discovery_url,
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    get_connection,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility, normalize_employment_type
 
 log = logging.getLogger(__name__)
@@ -351,11 +361,14 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             eligibility = classify_job_eligibility({
                 **job,
@@ -373,6 +386,7 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
                     url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
 
             description = job.get("full_description", "")
             short_desc = description[:500] if description else None
@@ -383,6 +397,10 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
             company = str(job.get("employer_name") or "").strip() or None
             site = "workday"
             strategy = "workday_api"
+
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
 
             try:
                 conn.execute(
@@ -398,17 +416,20 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
                      eligibility["eligibility_reason"]),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 # Repair legacy Workday rows that stored the employer in site
                 # and left company empty. Keep the source label consistent.
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'workday' "
-                    "WHERE url = ? AND strategy = 'workday_api'",
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = 'workday_api' THEN 'workday' ELSE site END "
+                    "WHERE url = ?",
                     (company, url),
                 )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("Workday", counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 

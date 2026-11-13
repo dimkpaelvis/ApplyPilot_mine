@@ -31,7 +31,17 @@ from patchright.sync_api import sync_playwright
 
 from applypilot import config
 from applypilot.config import CONFIG_DIR
-from applypilot.database import init_db, get_stats, write_with_retry
+from applypilot.database import (
+    canonicalize_discovery_url,
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    get_stats,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
@@ -111,16 +121,20 @@ def _store_jobs_filtered(
 ) -> tuple[int, int]:
     """Store jobs with location filtering. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0, "filtered": 0}
+    counts = {"new": 0, "existing": 0, "filtered": 0, "capped": 0}
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
         counts["filtered"] = 0
+        counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             url = job.get("url")
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
             if not _location_ok(job.get("location"), accept_locs, reject_locs):
                 counts["filtered"] += 1
                 continue
@@ -130,6 +144,9 @@ def _store_jobs_filtered(
                 continue
             description = job.get("description")
             initial_state = "enriched" if description and len(description) > 200 else "discovered"
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
@@ -150,16 +167,19 @@ def _store_jobs_filtered(
                     (url, initial_state, now, f"discovered via {strategy}", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 company = _normalise_company(job.get("company"))
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'smartextract' "
-                    "WHERE url = ? AND strategy = ?",
-                    (company, url, strategy),
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = ? THEN 'smartextract' ELSE site END "
+                    "WHERE url = ?",
+                    (company, strategy, url),
                 )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("SmartExtract", counts["capped"], quota_window)
     if counts["filtered"]:
         log.info("Filtered %d jobs (wrong location)", counts["filtered"])
     return counts["new"], counts["existing"]

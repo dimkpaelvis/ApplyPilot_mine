@@ -27,7 +27,17 @@ from typing import Callable
 import yaml
 
 from applypilot.config import CONFIG_DIR
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (
+    canonicalize_discovery_url,
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    get_connection,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
@@ -95,16 +105,20 @@ def insert_normalized_jobs(
     description, full_description, location, application_url, posted_at,
     employer_name); this writes them. Returns (new, existing).
     """
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
     now = datetime.now(timezone.utc).isoformat()
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             url = job.get("url")
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
             eligibility = classify_job_eligibility(job, require_remote=True)
             if eligibility["eligibility_status"] != "eligible":
                 log.debug("Filtered %s before insert: %s", url, eligibility["eligibility_reason"])
@@ -114,6 +128,9 @@ def insert_normalized_jobs(
             site = default_site
             company = str(job.get("employer_name") or "").strip() or None
             initial_state = "enriched" if full_description else "discovered"
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
@@ -135,15 +152,18 @@ def insert_normalized_jobs(
                     (url, initial_state, now, f"discovered via {strategy}", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = ? "
-                    "WHERE url = ? AND strategy = ?",
-                    (company, site, url, strategy),
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = ? THEN ? ELSE site END "
+                    "WHERE url = ?",
+                    (company, strategy, site, url),
                 )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped(default_site, counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 
