@@ -143,7 +143,7 @@ def test_daily_cap_does_not_count_manual_tracking_stubs(tmp_db, monkeypatch):
     ).fetchone()[0] == 1
 
 
-def test_daily_cap_is_serialized_across_concurrent_discovery_writers(tmp_db, tmp_path, monkeypatch):
+def test_daily_cap_is_serialized_across_concurrent_discovery_writers(tmp_db, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
 
@@ -266,3 +266,42 @@ def test_daily_cap_is_enforced_by_every_direct_discovery_adapter(tmp_db, monkeyp
     assert _store_hn_job(conn, hn_job, "Who is Hiring?") is False
 
     assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+
+def test_direct_adapter_canonicalizes_embedded_ats_url_before_deduplication(tmp_db, monkeypatch):
+    import pandas as pd
+
+    from applypilot import config
+    from applypilot.database import store_jobs
+    from applypilot.discovery.jobspy import store_jobspy_results
+
+    monkeypatch.setattr(
+        config,
+        "load_search_config",
+        lambda: {"defaults": {"daily_unique_job_limit": 1, "daily_unique_timezone": "Europe/London"}},
+    )
+    conn = tmp_db()
+    canonical_url = "https://job-boards.greenhouse.io/stripe/jobs/123"
+    assert store_jobs(
+        conn,
+        [{"url": canonical_url, "title": "Data Analyst"}],
+        "test",
+        "jobspy",
+    ) == (1, 0)
+
+    alias_df = pd.DataFrame([{
+        "job_url": "https://stripe.com/careers?gh_jid=123",
+        "title": "Data Analyst",
+        "company": "Stripe",
+        "location": "Remote - United Kingdom",
+        "job_type": "parttime",
+        "description": "Role summary",
+        "site": "linkedin",
+        "is_remote": True,
+    }])
+
+    assert store_jobspy_results(conn, alias_df, "test") == (0, 1)
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+    row = conn.execute(
+        "SELECT company FROM jobs WHERE url = ?", (canonical_url,)
+    ).fetchone()
+    assert row["company"] == "Stripe"
