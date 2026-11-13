@@ -32,6 +32,7 @@ from patchright.sync_api import sync_playwright
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import (
+    canonicalize_discovery_url,
     check_discovery_admission,
     get_daily_discovery_quota_window,
     get_stats,
@@ -133,6 +134,7 @@ def _store_jobs_filtered(
             url = job.get("url")
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
             if not _location_ok(job.get("location"), accept_locs, reject_locs):
                 counts["filtered"] += 1
                 continue
