@@ -43,7 +43,6 @@ jobs:
           src/applypilot/integrations/google_sheets.py
           tests/test_google_sheets.py
           tests/test_discovery_daily_cap.py
-          tests/test_scraper_contracts.py
 
       - name: Full regression suite (all discovery and application tests)
         run: pytest tests/ -v
