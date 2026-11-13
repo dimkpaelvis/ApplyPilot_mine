@@ -364,24 +364,32 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
             detail_scraped_at = now if full_description else None
             detail_error = job.get("detail_error")
 
-            site = job.get("employer_name", "Corporate")
+            company = str(job.get("employer_name") or "").strip() or None
+            site = "workday"
             strategy = "workday_api"
 
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
                     "detail_scraped_at, detail_error, employment_type, workplace_type, "
                     "eligibility_status, eligibility_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, short_desc, job.get("location"),
-                     site, strategy, now, job.get("posted_at"), full_description, url,
+                     site, company, strategy, now, job.get("posted_at"), full_description, url,
                      detail_scraped_at, detail_error, eligibility["employment_type"],
                      eligibility["workplace_type"], eligibility["eligibility_status"],
                      eligibility["eligibility_reason"]),
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                # Repair legacy Workday rows that stored the employer in site
+                # and left company empty. Keep the source label consistent.
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'workday' "
+                    "WHERE url = ? AND strategy = 'workday_api'",
+                    (company, url),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
