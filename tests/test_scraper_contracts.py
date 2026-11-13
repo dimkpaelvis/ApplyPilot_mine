@@ -381,6 +381,22 @@ def test_workday_stores_posted_at_from_start_date(tmp_db):
     assert row["company"] == "Corp"
     assert row["site"] == "workday"
 
+    # Existing rows from the earlier implementation stored the employer in
+    # site and left company empty. A duplicate discovery repairs that record.
+    conn.execute(
+        "UPDATE jobs SET company = NULL, site = 'Corp' WHERE url = ?",
+        ("https://corp.wd1.myworkdayjobs.com/jobs/SWE-1",),
+    )
+    conn.commit()
+    new, existing = store_results(conn, jobs[:1], {})
+    assert (new, existing) == (0, 1)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?",
+        ("https://corp.wd1.myworkdayjobs.com/jobs/SWE-1",),
+    ).fetchone()
+    assert row["company"] == "Corp"
+    assert row["site"] == "workday"
+
     row = conn.execute(
         "SELECT posted_at FROM jobs WHERE url = ?",
         ("https://corp.wd1.myworkdayjobs.com/jobs/DE-1",),
