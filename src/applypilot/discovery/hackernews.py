@@ -25,7 +25,12 @@ from datetime import datetime, timezone
 import httpx
 
 from applypilot import config
-from applypilot.database import init_db, write_with_retry
+from applypilot.database import (
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    init_db,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
@@ -225,9 +230,15 @@ def _store_hn_job(
         return False
 
     integrity_failed = {"v": False}
+    capped = {"v": False}
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         integrity_failed["v"] = False
+        capped["v"] = False
+        if check_discovery_admission(conn, url, quota_window) == "capped":
+            capped["v"] = True
+            return
         try:
             conn.execute(
                 "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
@@ -254,7 +265,9 @@ def _store_hn_job(
             integrity_failed["v"] = True
 
     write_with_retry(conn, _do_inserts)
-    return not integrity_failed["v"]
+    if capped["v"]:
+        log.warning("Hacker News: daily unique-job discovery limit reached; listing skipped.")
+    return not integrity_failed["v"] and not capped["v"]
 
 
 def run_hn_discovery(
