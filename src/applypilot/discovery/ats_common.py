@@ -27,7 +27,16 @@ from typing import Callable
 import yaml
 
 from applypilot.config import CONFIG_DIR
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, record_discovery_insert, reset_discovery_quota_window, write_with_retry)
+from applypilot.database import (
+    check_discovery_admission,
+    get_daily_discovery_quota_window,
+    get_connection,
+    init_db,
+    log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
+    write_with_retry,
+)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
