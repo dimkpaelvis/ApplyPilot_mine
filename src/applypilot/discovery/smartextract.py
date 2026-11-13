@@ -160,9 +160,10 @@ def _store_jobs_filtered(
             except sqlite3.IntegrityError:
                 company = _normalise_company(job.get("company"))
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'smartextract' "
-                    "WHERE url = ? AND strategy = ?",
-                    (company, url, strategy),
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = ? THEN 'smartextract' ELSE site END "
+                    "WHERE url = ?",
+                    (company, strategy, url),
                 )
                 counts["existing"] += 1
 
