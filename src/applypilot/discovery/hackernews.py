@@ -201,7 +201,8 @@ def _store_hn_job(
         url = f"https://news.ycombinator.com/item?id={slug}"
 
     title = job.get("title") or "Unknown Role"
-    company = job.get("company") or "Unknown Company"
+    company_value = str(job.get("company") or "").strip()
+    company = None if company_value.casefold() in {"", "unknown", "unknown company", "n/a", "none"} else company_value
     location = job.get("location") or ("Remote" if job.get("remote") else None)
     salary = job.get("salary")
     description = job.get("description") or ""
