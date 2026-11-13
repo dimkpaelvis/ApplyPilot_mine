@@ -112,7 +112,7 @@ def test_daily_cap_is_shared_with_ats_adapters_and_duplicates_still_repair(tmp_d
 
 
 def test_daily_cap_does_not_count_manual_tracking_stubs(tmp_db, monkeypatch):
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     from applypilot import config
     from applypilot.database import store_jobs
@@ -123,7 +123,7 @@ def test_daily_cap_does_not_count_manual_tracking_stubs(tmp_db, monkeypatch):
         lambda: {"defaults": {"daily_unique_job_limit": 1, "daily_unique_timezone": "Europe/London"}},
     )
     conn = tmp_db()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     conn.execute(
         "INSERT INTO jobs (url, title, site, discovered_at) VALUES (?, ?, ?, ?)",
         ("manual://tracked/1", "Manually tracked role", "manual", now),
