@@ -27,7 +27,7 @@ from typing import Callable
 import yaml
 
 from applypilot.config import CONFIG_DIR
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
@@ -149,6 +149,7 @@ def insert_normalized_jobs(
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped(default_site, counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 
