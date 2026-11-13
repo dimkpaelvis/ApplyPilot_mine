@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 from applypilot import config
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
@@ -199,6 +199,7 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("Costco", counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 
