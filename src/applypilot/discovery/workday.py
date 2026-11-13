@@ -410,8 +410,9 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
                 # Repair legacy Workday rows that stored the employer in site
                 # and left company empty. Keep the source label consistent.
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'workday' "
-                    "WHERE url = ? AND strategy = 'workday_api'",
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = 'workday_api' THEN 'workday' ELSE site END "
+                    "WHERE url = ?",
                     (company, url),
                 )
                 counts["existing"] += 1
