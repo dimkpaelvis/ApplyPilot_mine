@@ -22,7 +22,7 @@ import yaml
 
 from applypilot import config
 from applypilot.config import CONFIG_DIR
-from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility, normalize_employment_type
 
 log = logging.getLogger(__name__)
@@ -351,11 +351,13 @@ def fetch_details(employer: dict, jobs: list[dict]) -> list[dict]:
 def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -> tuple[int, int]:
     """Store corporate jobs in DB. Returns (new, existing)."""
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
+    quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
         counts["new"] = 0
         counts["existing"] = 0
+        counts["capped"] = 0
         for job in jobs:
             eligibility = classify_job_eligibility({
                 **job,
@@ -383,6 +385,10 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
             company = str(job.get("employer_name") or "").strip() or None
             site = "workday"
             strategy = "workday_api"
+
+            if check_discovery_admission(conn, url, quota_window) == "capped":
+                counts["capped"] += 1
+                continue
 
             try:
                 conn.execute(
