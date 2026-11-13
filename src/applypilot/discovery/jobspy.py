@@ -50,7 +50,7 @@ except Exception:
     pass  # If patching fails, fall back to original behavior
 
 from applypilot import config
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, record_discovery_insert, reset_discovery_quota_window, write_with_retry)
 from applypilot.discovery.eligibility import (
     classify_job_eligibility,
     configured_remote_countries,
@@ -260,6 +260,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
         counts["new"] = 0
         counts["existing"] = 0
         counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for _, row in rows_iter:
             url = str(row.get("job_url", ""))
             if not url or url == "nan":
@@ -352,6 +353,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                     (url, initial_state, now, f"discovered via {strategy}", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 # A duplicate URL may have been discovered previously without
                 # employer metadata. Backfill only a missing company; never
