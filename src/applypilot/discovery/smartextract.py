@@ -31,7 +31,7 @@ from patchright.sync_api import sync_playwright
 
 from applypilot import config
 from applypilot.config import CONFIG_DIR
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, init_db, get_stats, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, init_db, get_stats, log_discovery_quota_capped, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
@@ -165,6 +165,7 @@ def _store_jobs_filtered(
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("SmartExtract", counts["capped"], quota_window)
     if counts["filtered"]:
         log.info("Filtered %d jobs (wrong location)", counts["filtered"])
     return counts["new"], counts["existing"]
