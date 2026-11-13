@@ -239,7 +239,7 @@ def test_score_prompt_uses_employer_name_not_job_board(monkeypatch):
         def chat(self, messages, **kwargs):
             captured["prompt"] = messages[1]["content"]
             return (
-                "ELIGIBILITY: eligible\\nSCORE: 8\\nKEYWORDS: SQL\\n"
+                "ELIGIBILITY: eligible\nSCORE: 8\nKEYWORDS: SQL\n"
                 "REASONING: Remote part-time role matches the candidate."
             )
 
@@ -272,7 +272,7 @@ def test_score_prompt_marks_missing_employer_as_unknown_not_job_board(monkeypatc
         def chat(self, messages, **kwargs):
             captured["prompt"] = messages[1]["content"]
             return (
-                "ELIGIBILITY: eligible\\nSCORE: 8\\nKEYWORDS: SQL\\n"
+                "ELIGIBILITY: eligible\nSCORE: 8\nKEYWORDS: SQL\n"
                 "REASONING: Remote part-time role matches the candidate."
             )
 
