@@ -1234,6 +1234,13 @@ def _resolve_url(url: str, site: str) -> str | None:
     return None
 
 
+def canonicalize_discovery_url(url: str) -> str:
+    """Normalize embedded ATS URLs before duplicate and quota checks."""
+    from applypilot.discovery.url_normalize import canonicalize_application_url
+
+    return canonicalize_application_url(url)
+
+
 def get_daily_discovery_quota_window() -> dict:
     """Return one batch's quota settings and lazily initialized count.
 
@@ -1332,8 +1339,6 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
     now = datetime.now(timezone.utc).isoformat()
     counts = {"new": 0, "existing": 0, "capped": 0}
 
-    from applypilot.discovery.url_normalize import canonicalize_application_url
-
     quota_window = get_daily_discovery_quota_window()
 
     def _do_inserts() -> None:
@@ -1347,7 +1352,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             url = _resolve_url(url, site) or url
             if not url.startswith("http://") and not url.startswith("https://"):
                 continue
-            url = canonicalize_application_url(url)
+            url = canonicalize_discovery_url(url)
 
             admission = check_discovery_admission(conn, url, quota_window)
             if admission == "existing":
