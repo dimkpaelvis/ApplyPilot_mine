@@ -273,8 +273,9 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                 record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'builtin' "
-                    "WHERE url = ? AND strategy = 'builtin_html'",
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = 'builtin_html' THEN 'builtin' ELSE site END "
+                    "WHERE url = ?",
                     (company, url),
                 )
                 counts["existing"] += 1
