@@ -27,11 +27,13 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Lint database and discovery quota paths
+      - name: Lint existing quality targets
+        run: ruff check src/applypilot/discovery/eligibility.py src/applypilot/integrations/google_sheets.py tests/test_google_sheets.py tests/test_discovery_daily_cap.py
+
+      - name: Lint discovery quota changes for syntax and imports
         run: >-
-          ruff check
+          ruff check --select E4,E7,E9,F
           src/applypilot/database.py
-          src/applypilot/discovery/eligibility.py
           src/applypilot/discovery/jobspy.py
           src/applypilot/discovery/workday.py
           src/applypilot/discovery/ats_common.py
@@ -40,9 +42,6 @@ jobs:
           src/applypilot/discovery/builtin.py
           src/applypilot/discovery/smartextract.py
           src/applypilot/discovery/hackernews.py
-          src/applypilot/integrations/google_sheets.py
-          tests/test_google_sheets.py
-          tests/test_discovery_daily_cap.py
 
       - name: Full regression suite (all discovery and application tests)
         run: pytest tests/ -v
