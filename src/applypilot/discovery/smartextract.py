@@ -31,7 +31,7 @@ from patchright.sync_api import sync_playwright
 
 from applypilot import config
 from applypilot.config import CONFIG_DIR
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, init_db, get_stats, log_discovery_quota_capped, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, init_db, get_stats, log_discovery_quota_capped, record_discovery_insert, reset_discovery_quota_window, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
@@ -119,6 +119,7 @@ def _store_jobs_filtered(
         counts["existing"] = 0
         counts["filtered"] = 0
         counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             url = job.get("url")
             if not url:
@@ -155,6 +156,7 @@ def _store_jobs_filtered(
                     (url, initial_state, now, f"discovered via {strategy}", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 company = _normalise_company(job.get("company"))
                 conn.execute(
