@@ -124,12 +124,13 @@ def _store_jobs_filtered(
             initial_state = "enriched" if description and len(description) > 200 else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, state, employment_type, workplace_type, "
                     "eligibility_status, eligibility_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), job.get("salary"), description,
-                     job.get("location"), site, strategy, now,
+                     job.get("location"), "smartextract",
+                     str(job.get("company") or "").strip() or None, strategy, now,
                      job.get("posted_at"), initial_state, eligibility["employment_type"],
                      eligibility["workplace_type"], eligibility["eligibility_status"],
                      eligibility["eligibility_reason"]),
