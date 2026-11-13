@@ -582,3 +582,33 @@ def test_workday_does_not_fetch_details_for_explicit_full_time_summary(monkeypat
     assert result["found"] == 1
     assert result["summary_filtered"] == 1
     assert result["new"] == 0
+
+def test_workday_found_count_includes_summary_filtered_jobs(monkeypatch):
+    from applypilot.discovery import workday
+
+    search_results = [
+        {
+            "title": "Senior Data Analyst",
+            "location": "Remote - United Kingdom",
+            "bullet_fields": ["Full time"],
+            "external_path": "/job/full-time",
+        },
+        {
+            "title": "Part-time Data Analyst",
+            "location": "Remote - United Kingdom",
+            "bullet_fields": ["Part time"],
+            "external_path": "/job/part-time",
+        },
+    ]
+    monkeypatch.setattr(workday, "search_employer", lambda *a, **k: search_results)
+    monkeypatch.setattr(workday, "fetch_details", lambda employer, jobs: jobs)
+    monkeypatch.setattr(workday, "get_connection", lambda: object())
+    monkeypatch.setattr(workday, "store_results", lambda conn, jobs, employers: (1, 0))
+
+    result = workday._process_one(
+        "acme", {"acme": {"name": "Acme"}}, "data analyst", True, [], []
+    )
+
+    assert result["found"] == 2
+    assert result["summary_filtered"] == 1
+    assert result["new"] == 1
