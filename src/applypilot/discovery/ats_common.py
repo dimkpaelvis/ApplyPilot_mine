@@ -136,12 +136,11 @@ def insert_normalized_jobs(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
-                if company:
-                    conn.execute(
-                        "UPDATE jobs SET company = ? "
-                        "WHERE url = ? AND strategy = ? AND (company IS NULL OR TRIM(company) = '')",
-                        (company, url, strategy),
-                    )
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = ? "
+                    "WHERE url = ? AND strategy = ?",
+                    (company, site, url, strategy),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
