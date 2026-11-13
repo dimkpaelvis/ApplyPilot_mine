@@ -212,13 +212,13 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             initial_state = "enriched" if full_description else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
                     "detail_scraped_at, state, employment_type, workplace_type, "
                     "eligibility_status, eligibility_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, job.get("description"), job.get("location"),
-                     "Amazon", "amazon_jobs", now, posted_at, full_description,
+                     "amazon", "Amazon", "amazon_jobs", now, posted_at, full_description,
                      job.get("application_url"), detail_scraped_at, initial_state,
                      eligibility["employment_type"], eligibility["workplace_type"],
                      eligibility["eligibility_status"], eligibility["eligibility_reason"]),
@@ -231,6 +231,11 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'amazon' "
+                    "WHERE url = ? AND strategy = 'amazon_jobs'",
+                    ("Amazon", url),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)

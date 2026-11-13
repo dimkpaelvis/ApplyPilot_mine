@@ -273,7 +273,10 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 continue
 
             title = str(row.get("title", "")) if str(row.get("title", "")) != "nan" else None
-            _company = str(row.get("company", "")) if str(row.get("company", "")) != "nan" else None
+            company_value = row.get("company")
+            _company = str(company_value).strip() if company_value is not None else None
+            if not _company or _company.casefold() in {"nan", "none", "null", "<na>"}:
+                _company = None
             location_str = str(row.get("location", "")) if str(row.get("location", "")) != "nan" else None
 
             # Build salary string from min/max
@@ -328,11 +331,11 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at, "
-                    "full_description, application_url, detail_scraped_at, posted_at, state, "
+                    "company, full_description, application_url, detail_scraped_at, posted_at, state, "
                     "employment_type, workplace_type, eligibility_status, eligibility_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, title, salary, description, location_str, site_label, strategy, now,
-                     full_description, apply_url, detail_scraped_at, posted_at, initial_state,
+                     _company, full_description, apply_url, detail_scraped_at, posted_at, initial_state,
                      eligibility["employment_type"], eligibility["workplace_type"],
                      eligibility["eligibility_status"], eligibility["eligibility_reason"]),
                 )
@@ -344,6 +347,15 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                # A duplicate URL may have been discovered previously without
+                # employer metadata. Backfill only a missing company; never
+                # overwrite a known employer with a later blank/incorrect value.
+                if _company:
+                    conn.execute(
+                        "UPDATE jobs SET company = ? "
+                        "WHERE url = ? AND (company IS NULL OR TRIM(company) = '')",
+                        (_company, url),
+                    )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)

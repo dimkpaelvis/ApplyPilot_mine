@@ -168,7 +168,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             strategy              TEXT,
             discovered_at         TEXT,
 
-            -- Company (extracted from application_url domain)
+            -- Company (employer name supplied by the discovery source)
             company               TEXT,
 
             -- Enrichment stage (detail_scraper)

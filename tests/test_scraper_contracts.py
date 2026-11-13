@@ -64,6 +64,9 @@ def test_jobspy_insert_creates_initial_transition(tmp_db):
 
     url = "https://indeed.com/job/1"
     assert _state_of(conn, url) == "discovered"
+    stored = conn.execute("SELECT company, site FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert stored["company"] == "Acme"
+    assert stored["site"] == "indeed"
 
     transitions = _transitions_for(conn, url)
     assert len(transitions) == 1, f"Expected 1 transition, got {len(transitions)}"
@@ -132,6 +135,9 @@ def test_hackernews_insert_creates_initial_transition(tmp_db):
 
     url = "https://example.com/hn-job"
     assert _state_of(conn, url) == "enriched"
+    row = conn.execute("SELECT company, site FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert row["company"] == "StartupCo"
+    assert row["site"] == "hackernews"
 
     transitions = _transitions_for(conn, url)
     assert len(transitions) == 1, f"Expected 1 transition, got {len(transitions)}"
@@ -193,6 +199,9 @@ def test_costco_insert_creates_initial_transition(tmp_db):
 
     url = "https://careers.costco.com/job/12345"
     assert _state_of(conn, url) == "enriched"
+    row = conn.execute("SELECT company, site FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert row["company"] == "Costco"
+    assert row["site"] == "costco"
 
     transitions = _transitions_for(conn, url)
     assert len(transitions) == 1, f"Expected 1 transition, got {len(transitions)}"
@@ -371,13 +380,235 @@ def test_workday_stores_posted_at_from_start_date(tmp_db):
     assert new == 2
 
     row = conn.execute(
-        "SELECT posted_at FROM jobs WHERE url = ?",
+        "SELECT posted_at, company, site FROM jobs WHERE url = ?",
         ("https://corp.wd1.myworkdayjobs.com/jobs/SWE-1",),
     ).fetchone()
     assert row["posted_at"] == "2026-05-12"
+    assert row["company"] == "Corp"
+    assert row["site"] == "workday"
+
+    # Existing rows from the earlier implementation stored the employer in
+    # site and left company empty. A duplicate discovery repairs that record.
+    conn.execute(
+        "UPDATE jobs SET company = NULL, site = 'Corp' WHERE url = ?",
+        ("https://corp.wd1.myworkdayjobs.com/jobs/SWE-1",),
+    )
+    conn.commit()
+    new, existing = store_results(conn, jobs[:1], {})
+    assert (new, existing) == (0, 1)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?",
+        ("https://corp.wd1.myworkdayjobs.com/jobs/SWE-1",),
+    ).fetchone()
+    assert row["company"] == "Corp"
+    assert row["site"] == "workday"
 
     row = conn.execute(
         "SELECT posted_at FROM jobs WHERE url = ?",
         ("https://corp.wd1.myworkdayjobs.com/jobs/DE-1",),
     ).fetchone()
     assert row["posted_at"] is None
+
+def test_jobspy_duplicate_backfills_missing_company_without_overwriting_known_value(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.jobspy import store_jobspy_results
+    import pandas as pd
+
+    base = {
+        "job_url": "https://indeed.com/job/company-backfill",
+        "title": "Part-time Data Analyst",
+        "company": None,
+        "location": "Remote - United Kingdom",
+        "job_type": "parttime",
+        "min_amount": None,
+        "max_amount": None,
+        "interval": None,
+        "currency": None,
+        "description": "x" * 250,
+        "site": "indeed",
+        "is_remote": True,
+        "job_url_direct": None,
+        "date_posted": None,
+    }
+
+    new, existing = store_jobspy_results(conn, pd.DataFrame([base]), "test-query")
+    assert (new, existing) == (1, 0)
+
+    enriched = {**base, "company": "Acme Analytics"}
+    new, existing = store_jobspy_results(conn, pd.DataFrame([enriched]), "test-query")
+    assert (new, existing) == (0, 1)
+
+    row = conn.execute(
+        "SELECT company FROM jobs WHERE url = ?", (base["job_url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+
+    # A later duplicate with no company metadata must not erase the backfill.
+    new, existing = store_jobspy_results(conn, pd.DataFrame([base]), "test-query")
+    assert (new, existing) == (0, 1)
+    row = conn.execute(
+        "SELECT company FROM jobs WHERE url = ?", (base["job_url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+
+def test_ats_common_stores_employer_separately_from_source(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.ats_common import insert_normalized_jobs
+
+    job = {
+        "url": "https://boards.greenhouse.io/acme/jobs/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "description": "A part-time data role.",
+        "full_description": "Part-time remote data analyst role. " * 10,
+        "application_url": "https://boards.greenhouse.io/acme/jobs/123",
+        "employer_name": "Acme Analytics",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+    }
+    new, existing = insert_normalized_jobs(conn, [job], "greenhouse", "greenhouse_api")
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+    assert row["site"] == "greenhouse"
+
+
+def test_amazon_stores_company_and_source_separately(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.amazon import _insert_jobs
+
+    job = {
+        "url": "https://amazon.jobs/en/jobs/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+        "description": "A part-time data role.",
+        "full_description": "Part-time remote data analyst role. " * 10,
+    }
+    new, existing = _insert_jobs(conn, [job])
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Amazon"
+    assert row["site"] == "amazon"
+
+
+def test_builtin_stores_employer_and_source_separately(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.builtin import _insert_jobs
+
+    job = {
+        "url": "https://builtin.com/job/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "work_mode": "remote",
+        "employer_name": "Acme Analytics",
+        "description": "A part-time data role.",
+    }
+    new, existing = _insert_jobs(conn, [job])
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+    assert row["site"] == "builtin"
+
+
+def test_smartextract_stores_company_when_extracted(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.smartextract import _store_jobs_filtered
+
+    job = {
+        "url": "https://example.com/careers/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+        "company": "Acme Analytics",
+        "description": "A part-time data role.",
+    }
+    new, existing = _store_jobs_filtered(
+        conn, [job], "Example Careers", "json_ld", accept_locs=[], reject_locs=[]
+    )
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+    assert row["site"] == "smartextract"
+
+def test_workday_summary_prefilter_rejects_only_explicit_non_target_employment():
+    from applypilot.discovery.workday import _summary_employment_rejected
+
+    assert _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": ["Full time"]})
+    assert _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": ["Internship"]})
+    assert not _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": ["Part-time"]})
+    assert not _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": []})
+
+
+def test_workday_does_not_fetch_details_for_explicit_full_time_summary(monkeypatch):
+    from applypilot.discovery import workday
+
+    monkeypatch.setattr(
+        workday,
+        "search_employer",
+        lambda *args, **kwargs: [{
+            "title": "Senior Data Analyst",
+            "location": "Remote - United Kingdom",
+            "bullet_fields": ["Full time"],
+            "external_path": "/job/123",
+        }],
+    )
+    monkeypatch.setattr(
+        workday,
+        "fetch_details",
+        lambda *args, **kwargs: pytest.fail("Full-time summary must be filtered before detail fetch"),
+    )
+
+    result = workday._process_one(
+        "acme",
+        {"acme": {"name": "Acme"}},
+        "data analyst",
+        True,
+        [],
+        [],
+    )
+
+    assert result["found"] == 1
+    assert result["summary_filtered"] == 1
+    assert result["new"] == 0
+
+def test_workday_found_count_includes_summary_filtered_jobs(monkeypatch):
+    from applypilot.discovery import workday
+
+    search_results = [
+        {
+            "title": "Senior Data Analyst",
+            "location": "Remote - United Kingdom",
+            "bullet_fields": ["Full time"],
+            "external_path": "/job/full-time",
+        },
+        {
+            "title": "Part-time Data Analyst",
+            "location": "Remote - United Kingdom",
+            "bullet_fields": ["Part time"],
+            "external_path": "/job/part-time",
+        },
+    ]
+    monkeypatch.setattr(workday, "search_employer", lambda *a, **k: search_results)
+    monkeypatch.setattr(workday, "fetch_details", lambda employer, jobs: jobs)
+    monkeypatch.setattr(workday, "get_connection", lambda: object())
+    monkeypatch.setattr(workday, "store_results", lambda conn, jobs, employers: (1, 0))
+
+    result = workday._process_one(
+        "acme", {"acme": {"name": "Acme"}}, "data analyst", True, [], []
+    )
+
+    assert result["found"] == 2
+    assert result["summary_filtered"] == 1
+    assert result["new"] == 1

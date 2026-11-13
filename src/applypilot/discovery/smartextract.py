@@ -93,6 +93,14 @@ def load_sites() -> list[dict]:
     return data.get("sites", [])
 
 
+def _normalise_company(value) -> str | None:
+    """Return a real employer label, not a model-generated unknown placeholder."""
+    company = str(value or "").strip()
+    if company.casefold() in {"", "unknown", "unknown company", "n/a", "none", "null"}:
+        return None
+    return company
+
+
 def _store_jobs_filtered(
     conn: sqlite3.Connection,
     jobs: list[dict],
@@ -124,12 +132,13 @@ def _store_jobs_filtered(
             initial_state = "enriched" if description and len(description) > 200 else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, state, employment_type, workplace_type, "
                     "eligibility_status, eligibility_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), job.get("salary"), description,
-                     job.get("location"), site, strategy, now,
+                     job.get("location"), "smartextract",
+                     _normalise_company(job.get("company")), strategy, now,
                      job.get("posted_at"), initial_state, eligibility["employment_type"],
                      eligibility["workplace_type"], eligibility["eligibility_status"],
                      eligibility["eligibility_reason"]),
@@ -142,6 +151,12 @@ def _store_jobs_filtered(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                company = _normalise_company(job.get("company"))
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'smartextract' "
+                    "WHERE url = ? AND strategy = ?",
+                    (company, url, strategy),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)

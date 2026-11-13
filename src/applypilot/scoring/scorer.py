@@ -196,7 +196,7 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
 
         job_text = (
             f"TITLE: {job['title']}\n"
-            f"COMPANY: {job['site']}\n"
+            f"COMPANY: {job.get('company') or 'Unknown employer'}\n"
             f"LOCATION: {job.get('location', 'N/A')}\n\n"
             f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
         )

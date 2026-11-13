@@ -229,3 +229,67 @@ def test_score_job_allows_verified_remote_part_time_to_llm(monkeypatch):
     )
     assert result["eligibility"] == "eligible"
     assert result["score"] == 8
+
+def test_score_prompt_uses_employer_name_not_job_board(monkeypatch):
+    from applypilot.scoring import scorer
+
+    captured = {}
+
+    class FakeClient:
+        def chat(self, messages, **kwargs):
+            captured["prompt"] = messages[1]["content"]
+            return (
+                "ELIGIBILITY: eligible\nSCORE: 8\nKEYWORDS: SQL\n"
+                "REASONING: Remote part-time role matches the candidate."
+            )
+
+    monkeypatch.setattr(scorer, "get_client", lambda: FakeClient())
+    result = score_job(
+        "resume text",
+        {
+            "title": "Part-time Data Analyst",
+            "site": "linkedin",
+            "company": "Acme Analytics Ltd",
+            "employment_type": "part_time",
+            "workplace_type": "remote",
+            "location": "Remote - United Kingdom",
+            "full_description": "Part-time remote data analyst role.",
+        },
+        profile={},
+    )
+
+    assert result["score"] == 8
+    assert "COMPANY: Acme Analytics Ltd" in captured["prompt"]
+    assert "COMPANY: linkedin" not in captured["prompt"]
+
+
+def test_score_prompt_marks_missing_employer_as_unknown_not_job_board(monkeypatch):
+    from applypilot.scoring import scorer
+
+    captured = {}
+
+    class FakeClient:
+        def chat(self, messages, **kwargs):
+            captured["prompt"] = messages[1]["content"]
+            return (
+                "ELIGIBILITY: eligible\nSCORE: 8\nKEYWORDS: SQL\n"
+                "REASONING: Remote part-time role matches the candidate."
+            )
+
+    monkeypatch.setattr(scorer, "get_client", lambda: FakeClient())
+    result = score_job(
+        "resume text",
+        {
+            "title": "Part-time Data Analyst",
+            "site": "indeed",
+            "employment_type": "part_time",
+            "workplace_type": "remote",
+            "location": "Remote - United Kingdom",
+            "full_description": "Part-time remote data analyst role.",
+        },
+        profile={},
+    )
+
+    assert result["score"] == 8
+    assert "COMPANY: Unknown employer" in captured["prompt"]
+    assert "COMPANY: indeed" not in captured["prompt"]

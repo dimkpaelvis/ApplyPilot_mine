@@ -201,7 +201,8 @@ def _store_hn_job(
         url = f"https://news.ycombinator.com/item?id={slug}"
 
     title = job.get("title") or "Unknown Role"
-    company = job.get("company") or "Unknown Company"
+    company_value = str(job.get("company") or "").strip()
+    company = None if company_value.casefold() in {"", "unknown", "unknown company", "n/a", "none"} else company_value
     location = job.get("location") or ("Remote" if job.get("remote") else None)
     salary = job.get("salary")
     description = job.get("description") or ""
@@ -229,12 +230,12 @@ def _store_hn_job(
         integrity_failed["v"] = False
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                 "discovered_at, posted_at, full_description, detail_scraped_at, state, "
                 "employment_type, workplace_type, eligibility_status, eligibility_reason) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location,
-                 f"HN: {company}", "hackernews", now, posted_at, description, now, initial_state,
+                 "hackernews", company, "hackernews", now, posted_at, description, now, initial_state,
                  eligibility["employment_type"], eligibility["workplace_type"],
                  eligibility["eligibility_status"], eligibility["eligibility_reason"]),
             )
@@ -245,6 +246,11 @@ def _store_hn_job(
                 (url, initial_state, now, "discovered via hackernews", None),
             )
         except sqlite3.IntegrityError:
+            conn.execute(
+                "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'hackernews' "
+                "WHERE url = ? AND strategy = 'hackernews'",
+                (company, url),
+            )
             integrity_failed["v"] = True
 
     write_with_retry(conn, _do_inserts)
