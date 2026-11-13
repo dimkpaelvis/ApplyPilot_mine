@@ -1355,9 +1355,6 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             url = canonicalize_discovery_url(url)
 
             admission = check_discovery_admission(conn, url, quota_window)
-            if admission == "existing":
-                counts["existing"] += 1
-                continue
             if admission == "capped":
                 counts["capped"] += 1
                 continue
