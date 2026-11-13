@@ -64,6 +64,9 @@ def test_jobspy_insert_creates_initial_transition(tmp_db):
 
     url = "https://indeed.com/job/1"
     assert _state_of(conn, url) == "discovered"
+    stored = conn.execute("SELECT company, site FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert stored["company"] == "Acme"
+    assert stored["site"] == "indeed"
 
     transitions = _transitions_for(conn, url)
     assert len(transitions) == 1, f"Expected 1 transition, got {len(transitions)}"
