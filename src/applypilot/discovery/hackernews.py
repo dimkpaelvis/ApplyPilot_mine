@@ -263,8 +263,9 @@ def _store_hn_job(
             record_discovery_insert(quota_window)
         except sqlite3.IntegrityError:
             conn.execute(
-                "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'hackernews' "
-                "WHERE url = ? AND strategy = 'hackernews'",
+                "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                "site = CASE WHEN strategy = 'hackernews' THEN 'hackernews' ELSE site END "
+                "WHERE url = ?",
                 (company, url),
             )
             integrity_failed["v"] = True
