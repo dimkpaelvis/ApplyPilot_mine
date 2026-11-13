@@ -17,7 +17,13 @@ def _load_jobs(limit, min_score, max_age_days, max_score, target_url):
     conn = get_connection()
     clauses = ["tailored_resume_path IS NOT NULL",
                "(apply_status IS NULL OR apply_status NOT IN ('applied','in_progress','needs_human'))",
-               "(eligibility IS NULL OR eligibility = 'eligible')", "COALESCE(fit_score,0) >= ?"]
+               "eligibility = 'eligible'",
+               "eligibility_status = 'eligible'",
+               "applicant_eligibility = 'eligible'",
+               "candidate_suitability = 'suitable'",
+               "((decision_route = 'auto_apply_queue' AND auto_apply_qualified = 1) OR "
+               "(decision_route = 'manual_review' AND lower(coalesce(review_decision, '')) = 'approved'))",
+               "COALESCE(fit_score,0) >= ?"]
     params = [min_score]
     if max_score is not None:
         clauses.append("fit_score <= ?"); params.append(max_score)

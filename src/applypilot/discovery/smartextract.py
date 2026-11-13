@@ -32,6 +32,7 @@ from patchright.sync_api import sync_playwright
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import init_db, get_stats, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -92,6 +93,14 @@ def load_sites() -> list[dict]:
     return data.get("sites", [])
 
 
+def _normalise_company(value) -> str | None:
+    """Return a real employer label, not a model-generated unknown placeholder."""
+    company = str(value or "").strip()
+    if company.casefold() in {"", "unknown", "unknown company", "n/a", "none", "null"}:
+        return None
+    return company
+
+
 def _store_jobs_filtered(
     conn: sqlite3.Connection,
     jobs: list[dict],
@@ -115,16 +124,24 @@ def _store_jobs_filtered(
             if not _location_ok(job.get("location"), accept_locs, reject_locs):
                 counts["filtered"] += 1
                 continue
+            eligibility = classify_job_eligibility(job, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                counts["filtered"] += 1
+                continue
             description = job.get("description")
             initial_state = "enriched" if description and len(description) > 200 else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
-                    "discovered_at, posted_at, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
+                    "discovered_at, posted_at, state, employment_type, workplace_type, "
+                    "eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), job.get("salary"), description,
-                     job.get("location"), site, strategy, now,
-                     job.get("posted_at"), initial_state),
+                     job.get("location"), "smartextract",
+                     _normalise_company(job.get("company")), strategy, now,
+                     job.get("posted_at"), initial_state, eligibility["employment_type"],
+                     eligibility["workplace_type"], eligibility["eligibility_status"],
+                     eligibility["eligibility_reason"]),
                 )
                 conn.execute(
                     "INSERT INTO job_state_transitions "
@@ -134,6 +151,12 @@ def _store_jobs_filtered(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                company = _normalise_company(job.get("company"))
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'smartextract' "
+                    "WHERE url = ? AND strategy = ?",
+                    (company, url, strategy),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)

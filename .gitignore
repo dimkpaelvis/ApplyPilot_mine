@@ -1,6 +1,7 @@
 # User data (NEVER commit)
 profile.json
 resume.txt
+MASTER_CV.md
 resume.pdf
 *.env
 .env.*

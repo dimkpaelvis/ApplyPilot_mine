@@ -11,6 +11,7 @@ from applypilot.database import (
     VALID_TRANSITIONS,
     backfill_states,
     current_state,
+    get_jobs_by_stage,
     state_history,
     transition_state,
 )
@@ -169,3 +170,39 @@ def test_backfill_is_idempotent(tmp_db, seed_job):
     assert sum(first.values()) == 1
     second = backfill_states(conn)
     assert second == {}  # nothing more to do
+
+
+
+def test_pending_tailor_requires_explicit_eligibility(tmp_db, seed_job):
+    conn = tmp_db()
+    url = seed_job(conn, url_suffix="eligibility-gate")["url"]
+    conn.execute(
+        "UPDATE jobs SET fit_score = 9, full_description = ?, eligibility = NULL, "
+        "tailored_resume_path = NULL WHERE url = ?",
+        ("Part-time remote data analyst role.", url),
+    )
+    conn.commit()
+
+    pending = get_jobs_by_stage(
+        conn=conn, stage="pending_tailor", max_age_days=0,
+    )
+    assert url not in {job["url"] for job in pending}
+
+    conn.execute(
+        "UPDATE jobs SET eligibility = 'eligible', eligibility_status = 'unverified' WHERE url = ?",
+        (url,),
+    )
+    conn.commit()
+    pending = get_jobs_by_stage(
+        conn=conn, stage="pending_tailor", max_age_days=0,
+    )
+    assert url not in {job["url"] for job in pending}
+
+    conn.execute(
+        "UPDATE jobs SET eligibility_status = 'eligible' WHERE url = ?", (url,)
+    )
+    conn.commit()
+    pending = get_jobs_by_stage(
+        conn=conn, stage="pending_tailor", max_age_days=0,
+    )
+    assert url in {job["url"] for job in pending}

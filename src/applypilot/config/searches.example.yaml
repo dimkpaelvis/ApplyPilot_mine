@@ -6,97 +6,93 @@
 # Tier 1: High-priority exact matches (searched first, highest precision)
 # Tier 2: Strong matches, broader scope
 # Tier 3: Wide net, high volume, lower precision
-queries:
-  - query: "software engineer"
-    tier: 1
-  - query: "backend engineer"
-    tier: 1
-  - query: "backend developer"
-    tier: 1
-  - query: "full stack developer"
-    tier: 2
-  - query: "full stack engineer"
-    tier: 2
-  - query: "python developer"
-    tier: 2
-  - query: "python engineer"
-    tier: 2
-  - query: "DevOps engineer"
-    tier: 2
-  - query: "site reliability engineer"
-    tier: 2
-  - query: "platform engineer"
-    tier: 2
-  - query: "cloud engineer"
-    tier: 2
-  - query: "data engineer"
-    tier: 2
-  - query: "infrastructure engineer"
-    tier: 2
-  - query: "software developer"
-    tier: 3
-  - query: "developer"
-    tier: 3
-  - query: "systems engineer"
-    tier: 3
-  - query: "automation engineer"
-    tier: 3
-  - query: "solutions engineer"
-    tier: 3
-  - query: "integration engineer"
-    tier: 3
-  - query: "ML engineer"
-    tier: 3
-  - query: "machine learning engineer"
-    tier: 3
-  - query: "AI engineer"
-    tier: 3
-  - query: "security engineer"
-    tier: 3
-
-# Locations to search
 locations:
-  - location: "San Francisco, CA"
-    remote: false
   - location: "Remote"
     remote: true
 
+allowed_remote_countries:
+  - "United Kingdom"
+  - "Ireland"
+  - "United States"
+  - "Canada"
+  - "Australia"
+  - "New Zealand"
+  - "South Africa"
+  - "Singapore"
+
+matching:
+  # Candidate work location, not the employer's job location.
+  candidate_country: "United Kingdom"
+  strict:
+    require_explicit_applicant_country: true
+  timezone_policy: "review"
+  flexible:
+    role_keywords:
+      - "junior data analyst"
+      - "data operations"
+      - "data quality"
+      - "reporting analyst"
+      - "sql analyst"
+      - "junior data engineer"
+    preferred_skills:
+      - "sql"
+      - "python"
+      - "mysql"
+      - "excel"
+      - "pandas"
+    minimum_fit_score: 8
+  auto_apply:
+    # Keep false until routing has been validated on a representative sample.
+    enabled: false
+
+queries:
+  - query: "junior data analyst"
+    tier: 1
+  - query: "part-time data analyst"
+    tier: 1
+  - query: "freelance data analyst"
+    tier: 1
+  - query: "contract data analyst"
+    tier: 1
+  - query: "junior SQL analyst"
+    tier: 2
+  - query: "data quality analyst"
+    tier: 2
+  - query: "junior data engineer"
+    tier: 2
+  - query: "freelance SQL developer"
+    tier: 2
+  - query: "part-time reporting analyst"
+    tier: 2
+
 # Location filtering -- accept/reject patterns for job location text
-location:
-  accept_patterns:
-    - "San Francisco"
-    - "Bay Area"
-    - "SF"
-    - "California"
-    - "CA"
-    - "Remote"
-    - "Anywhere"
-    - "United States"
-    - "US"
-    - "USA"
-  reject_patterns:
-    - "New York only"
-    - "Seattle only"
-    - "onsite only"
-    - "London, UK"
-    - "India"
-    - "Philippines"
+location_accept:
+  - "United Kingdom"
+  - "UK"
+  - "Remote"
+location_reject_non_remote:
+  - "onsite only"
+  - "on-site only"
 
-# Country for Indeed/LinkedIn/Google Jobs searches
-country: "USA"
-
-# JobSpy source boards (all available options shown)
-boards:
+# JobSpy source names consumed by the current discovery runner.
+# Indeed remains country-scoped by country_indeed below; LinkedIn is searched
+# with the broad Remote location and then checked against the country allowlist.
+sites:
   - indeed
   - linkedin
-  - glassdoor
-  - zip_recruiter
-  - google
 
 # Search defaults
 defaults:
-  results_per_site: 100  # Max results per board per query
-  hours_old: 72          # Only jobs posted within this many hours
+  results_per_site: 30
+  # Global cap across all discovery sources; duplicates do not consume quota.
+  daily_unique_job_limit: 50
+  daily_unique_timezone: "Europe/London"
+  hours_old: 72
+  country_indeed: "uk"
+  remote_only: true
+  employment_types:
+    - parttime
+    - contract  # includes freelance engagements
 
 # Negative keywords -- skip jobs with these in the title (case-insensitive)
 exclude_titles:

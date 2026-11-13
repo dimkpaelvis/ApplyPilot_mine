@@ -56,15 +56,14 @@ def _build_fallback_chain(primary_model: str, quality: bool = False) -> list[Mod
     # Gemini chains — use verified model IDs only
     if quality:
         gemini_models = [
-            "gemini-2.5-pro",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
         ]
     else:
         gemini_models = [
-            "gemini-2.5-flash",
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.5-flash-lite",
         ]
 
     # OpenAI fallbacks (cost-efficient)
@@ -148,7 +147,7 @@ def _detect_provider(quality: bool = False) -> tuple[str, str, str]:
     if gemini_key and not local_url:
         return (
             "https://generativelanguage.googleapis.com/v1beta/openai",
-            chosen_model or "gemini-2.5-flash",
+            chosen_model or "gemini-3.6-flash",
             gemini_key,
         )
     if openai_key and not local_url:
@@ -167,6 +166,47 @@ def _detect_provider(quality: bool = False) -> tuple[str, str, str]:
         "No LLM provider configured. "
         "Set GEMINI_API_KEY, OPENAI_API_KEY, or LLM_URL."
     )
+
+
+def _extract_openai_compat_text(data: object) -> str:
+    """Validate an OpenAI-compatible completion and return non-empty assistant text."""
+    if not isinstance(data, dict):
+        raise ValueError("response body is not a JSON object")
+    choices = data.get("choices")
+    if not isinstance(choices, list) or not choices:
+        raise ValueError("response contains no choices")
+    choice = choices[0]
+    if not isinstance(choice, dict):
+        raise ValueError("first choice is not an object")
+    finish_reason = choice.get("finish_reason")
+    message = choice.get("message")
+    if not isinstance(message, dict):
+        raise ValueError(f"assistant message is missing (finish_reason={finish_reason!r})")
+    if finish_reason == "length":
+        raise ValueError("generation was truncated at the output-token limit")
+    if finish_reason == "content_filter":
+        raise ValueError("generation was blocked by the provider's content filter")
+
+    content = message.get("content")
+    if isinstance(content, str):
+        result = content.strip()
+    elif isinstance(content, list):
+        parts = [
+            block["text"] for block in content
+            if isinstance(block, dict)
+            and block.get("type") in ("text", "output_text")
+            and isinstance(block.get("text"), str)
+        ]
+        result = "\n".join(part.strip() for part in parts if part.strip())
+    else:
+        result = ""
+    if not result:
+        refusal = message.get("refusal")
+        detail = f"; refusal={refusal!r}" if refusal else ""
+        raise ValueError(
+            f"assistant content is missing or empty (finish_reason={finish_reason!r}{detail})"
+        )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -244,10 +284,8 @@ class LLMClient:
                            is_last: bool = False) -> str | None:
         """Try an OpenAI-compatible endpoint (Gemini, OpenAI, local)."""
         headers = {"Content-Type": "application/json"}
-        if entry.provider == "gemini":
-            # Google AI Studio API keys are accepted through x-goog-api-key.
-            headers["x-goog-api-key"] = entry.api_key
-        elif entry.api_key:
+        if entry.api_key:
+            # Gemini's OpenAI-compatible endpoint expects Bearer authentication.
             headers["Authorization"] = f"Bearer {entry.api_key}"
         # DeepSeek deepseek-chat has an 8192 max output token limit
         if entry.provider == "deepseek":
@@ -323,27 +361,16 @@ class LLMClient:
 
                 resp.raise_for_status()
                 data = resp.json()
-                # Guard against malformed responses (null body, null choices, null content)
-                if not isinstance(data, dict) or not data.get("choices"):
+                try:
+                    text = _extract_openai_compat_text(data)
+                except ValueError as exc:
                     if not is_last:
-                        log.warning("%s/%s: malformed response (no choices), trying next",
-                                    entry.provider, entry.name)
+                        log.warning("%s/%s: %s; trying next model",
+                                    entry.provider, entry.name, exc)
                         return None
                     raise RuntimeError(
-                        f"Malformed response from {entry.provider}/{entry.name}: "
-                        f"no choices in {type(data).__name__}"
-                    )
-                text = data["choices"][0]["message"]["content"]
-                if text is None:
-                    # Model returned null content (refusal, tool_call, etc.)
-                    if not is_last:
-                        log.warning("%s/%s: null content in response, trying next",
-                                    entry.provider, entry.name)
-                        return None
-                    raise RuntimeError(
-                        f"Null content from {entry.provider}/{entry.name} "
-                        f"(refusal: {data['choices'][0]['message'].get('refusal', 'none')})"
-                    )
+                        f"Unusable response from {entry.provider}/{entry.name}: {exc}"
+                    ) from exc
 
                 if entry.name != self.model:
                     log.info("Used fallback %s/%s (primary: %s)",
@@ -443,7 +470,16 @@ class LLMClient:
                 for block in data.get("content", []):
                     if block.get("type") == "text":
                         text_parts.append(block["text"])
-                text = "\n".join(text_parts)
+                text = "\n".join(text_parts).strip()
+                if not text:
+                    if not is_last:
+                        log.warning("anthropic/%s returned no text content, trying next",
+                                    entry.name)
+                        return None
+                    raise RuntimeError(
+                        f"Unusable response from anthropic/{entry.name}: "
+                        "response contained no text blocks"
+                    )
 
                 if entry.name != self.model:
                     log.info("Used fallback anthropic/%s (primary: %s)",

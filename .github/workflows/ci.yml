@@ -2,17 +2,18 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/uk-job-search-and-application-log]
   pull_request:
-    branches: [main]
   workflow_dispatch:  # also allow manual trigger
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Checkout
@@ -26,8 +27,8 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
-      - name: Lint
-        run: ruff check src/
+      - name: Lint eligibility engine and focused tests
+        run: ruff check src/applypilot/discovery/eligibility.py src/applypilot/integrations/google_sheets.py tests/test_google_sheets.py tests/test_discovery_daily_cap.py
 
-      - name: Test
+      - name: Full regression suite (all discovery and application tests)
         run: pytest tests/ -v

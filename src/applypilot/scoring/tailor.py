@@ -18,7 +18,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
-from applypilot.config import RESUME_PATH, TAILORED_DIR, load_profile
+from applypilot.config import TAILORED_DIR, load_profile, load_resume_text
 from applypilot.database import get_connection, get_jobs_by_stage, transition_state, write_with_retry
 from applypilot.llm import get_client
 from applypilot.scoring.validator import (
@@ -744,7 +744,7 @@ def run_tailoring(min_score: int | None = None, limit: int = 20, workers: int = 
         min_score = DEFAULTS["min_score"]
 
     profile = load_profile()
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = load_resume_text()
     conn = get_connection()
 
     # Note: get_jobs_by_stage now applies a 14-day discovered_at filter by

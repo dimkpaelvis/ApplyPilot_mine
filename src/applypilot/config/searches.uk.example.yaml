@@ -1,0 +1,63 @@
+# Remote English-speaking-market search profile for entry-level data and reporting roles.
+# Copy this file to ~/.applypilot/searches.yaml before running discovery.
+
+defaults:
+  location: "Remote"
+  distance: 0
+  hours_old: 72
+  results_per_site: 30
+
+locations:
+  - location: "Remote"
+    remote: true
+
+# Remote roles must identify one of the allowlisted countries above. A generic
+# 'Remote'/'Worldwide' location is unverified and is not admitted to the pipeline.
+sites:
+  - indeed
+  - linkedin
+
+allowed_remote_countries:
+  - "United Kingdom"
+  - "Ireland"
+  - "United States"
+  - "Canada"
+  - "Australia"
+  - "New Zealand"
+  - "South Africa"
+  - "Singapore"
+
+location_accept:
+  - "United Kingdom"
+  - "UK"
+  - "Ireland"
+  - "United States"
+  - "USA"
+  - "Canada"
+  - "Australia"
+  - "New Zealand"
+  - "South Africa"
+  - "Singapore"
+location_reject_non_remote:
+  - "onsite only"
+  - "on-site only"
+
+queries:
+  - query: "Junior Data Analyst"
+    tier: 1
+  - query: "Entry Level Data Analyst"
+    tier: 1
+  - query: "Data Operations Analyst"
+    tier: 1
+  - query: "Data Quality Analyst"
+    tier: 1
+  - query: "Reporting Analyst SQL Excel"
+    tier: 1
+  - query: "SQL Analyst"
+    tier: 1
+  - query: "Data Administrator"
+    tier: 1
+  - query: "Junior BI Analyst"
+    tier: 2
+  - query: "Junior Data Engineer"
+    tier: 3

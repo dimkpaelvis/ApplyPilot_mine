@@ -28,6 +28,7 @@ import yaml
 
 from applypilot.config import CONFIG_DIR
 from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
 
@@ -104,20 +105,28 @@ def insert_normalized_jobs(
             url = job.get("url")
             if not url:
                 continue
+            eligibility = classify_job_eligibility(job, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                log.debug("Filtered %s before insert: %s", url, eligibility["eligibility_reason"])
+                continue
             full_description = job.get("full_description")
             detail_scraped_at = now if full_description else None
-            site = job.get("employer_name", default_site)
+            site = default_site
+            company = str(job.get("employer_name") or "").strip() or None
             initial_state = "enriched" if full_description else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
-                    "detail_scraped_at, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "detail_scraped_at, state, employment_type, workplace_type, "
+                    "eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, job.get("description"),
-                     job.get("location"), site, strategy, now,
+                     job.get("location"), site, company, strategy, now,
                      job.get("posted_at"), full_description,
-                     job.get("application_url"), detail_scraped_at, initial_state),
+                     job.get("application_url"), detail_scraped_at, initial_state,
+                     eligibility["employment_type"], eligibility["workplace_type"],
+                     eligibility["eligibility_status"], eligibility["eligibility_reason"]),
                 )
                 conn.execute(
                     "INSERT INTO job_state_transitions "
@@ -127,6 +136,11 @@ def insert_normalized_jobs(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = ? "
+                    "WHERE url = ? AND strategy = ?",
+                    (company, site, url, strategy),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
@@ -148,11 +162,10 @@ def run_ats_crawl(
 
     Args:
         label: human-readable name in log lines, e.g. "Greenhouse".
-        default_site: ``jobs.site`` fallback when the per-job dict has no
-            ``employer_name`` (shouldn't happen, but defensive).
+        default_site: Source label stored in ``jobs.site``, e.g. "greenhouse".
         strategy: ``jobs.strategy`` value, e.g. "greenhouse_api".
-        employers: ``{slug: meta_dict}``; ``meta_dict["name"]`` becomes the
-            ``site`` column.
+        employers: ``{slug: meta_dict}``; ``meta_dict["name"]`` is stored
+            in the ``company`` column.
         scrape_one: function called per (slug, meta, accept_locs); returns
             (jobs_list, error_str_or_None). Each job dict must match the
             shape ``insert_normalized_jobs`` expects.

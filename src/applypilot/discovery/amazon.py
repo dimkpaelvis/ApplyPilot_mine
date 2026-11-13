@@ -22,6 +22,7 @@ from html.parser import HTMLParser
 
 
 from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
 
@@ -202,19 +203,25 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             url = job.get("url")
             if not url:
                 continue
+            eligibility = classify_job_eligibility(job, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                continue
             full_description = job.get("full_description")
             detail_scraped_at = now if full_description else None
             posted_at = job.get("posted_date") or None
             initial_state = "enriched" if full_description else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
-                    "detail_scraped_at, state) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "detail_scraped_at, state, employment_type, workplace_type, "
+                    "eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, job.get("description"), job.get("location"),
-                     "Amazon", "amazon_jobs", now, posted_at, full_description,
-                     job.get("application_url"), detail_scraped_at, initial_state),
+                     "amazon", "Amazon", "amazon_jobs", now, posted_at, full_description,
+                     job.get("application_url"), detail_scraped_at, initial_state,
+                     eligibility["employment_type"], eligibility["workplace_type"],
+                     eligibility["eligibility_status"], eligibility["eligibility_reason"]),
                 )
                 conn.execute(
                     "INSERT INTO job_state_transitions "
@@ -224,6 +231,11 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'amazon' "
+                    "WHERE url = ? AND strategy = 'amazon_jobs'",
+                    ("Amazon", url),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)

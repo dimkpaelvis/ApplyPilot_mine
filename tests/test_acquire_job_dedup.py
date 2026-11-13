@@ -59,7 +59,7 @@ def test_acquire_skips_job_when_other_row_already_applied(
         url="https://www.linkedin.com/jobs/view/4380167634",
         application_url=shared_apply_url,
         apply_status=None,
-        fit_score=10, company="overstory",
+        fit_score=10, company="overstory", review_decision="approved",
     )
 
     job = acquire_job(min_score=10, max_age_days=0)
@@ -89,7 +89,7 @@ def test_acquire_skips_when_other_row_in_progress(tmp_db, seed_job, monkeypatch)
         url="https://www.linkedin.com/jobs/view/2",
         application_url=shared,
         apply_status=None,
-        fit_score=10, company="temporal",
+        fit_score=10, company="temporal", review_decision="approved",
     )
 
     assert acquire_job(min_score=10, max_age_days=0) is None
@@ -107,7 +107,7 @@ def test_acquire_does_not_block_self(tmp_db, seed_job, monkeypatch):
         url="https://www.linkedin.com/jobs/view/solo",
         application_url="https://boards.greenhouse.io/acme/jobs/123",
         apply_status=None,
-        fit_score=10, company="acme",
+        fit_score=10, company="acme", review_decision="approved",
     )
     job = acquire_job(min_score=10, max_age_days=0)
     assert job is not None, "Solo candidate must be acquireable"
@@ -128,14 +128,14 @@ def test_acquire_skips_jobs_with_null_application_url(
         url="https://www.linkedin.com/jobs/view/no-apply-url",
         application_url=None,
         apply_status=None,
-        fit_score=10, company="acme",
+        fit_score=10, company="acme", review_decision="approved",
     )
     seed_job(
         conn, url_suffix="empty-apply-url",
         url="https://www.linkedin.com/jobs/view/empty",
         application_url="",
         apply_status=None,
-        fit_score=10, company="acme",
+        fit_score=10, company="acme", review_decision="approved",
     )
 
     assert acquire_job(min_score=10, max_age_days=0) is None
@@ -169,7 +169,7 @@ def test_acquire_picks_valid_when_others_are_null(
         url="https://www.linkedin.com/jobs/view/good",
         application_url="https://boards.greenhouse.io/acme/jobs/9",
         apply_status=None,
-        fit_score=10, company="acme",
+        fit_score=10, company="acme", review_decision="approved",
     )
 
     job = acquire_job(min_score=10, max_age_days=0)
@@ -205,7 +205,7 @@ def test_acquire_prefers_unapplied_company_over_higher_score(
         company="acme",
         application_url="https://boards.greenhouse.io/acme/jobs/101",
         apply_status=None,
-        fit_score=10,
+        fit_score=10, review_decision="approved",
     )
 
     # Beta has zero in-flight — lower score but should fire first.
@@ -214,7 +214,7 @@ def test_acquire_prefers_unapplied_company_over_higher_score(
         company="beta",
         application_url="https://boards.greenhouse.io/beta/jobs/200",
         apply_status=None,
-        fit_score=9,
+        fit_score=9, review_decision="approved",
     )
 
     job = acquire_job(min_score=8, max_age_days=0)
@@ -239,16 +239,92 @@ def test_acquire_falls_back_to_higher_score_when_in_flight_tied(
         company="alpha",
         application_url="https://boards.greenhouse.io/alpha/jobs/1",
         apply_status=None,
-        fit_score=9,
+        fit_score=9, review_decision="approved",
     )
     seed_job(
         conn, url_suffix="beta-10",
         company="beta",
         application_url="https://boards.greenhouse.io/beta/jobs/1",
         apply_status=None,
-        fit_score=10,
+        fit_score=10, review_decision="approved",
     )
 
     job = acquire_job(min_score=8, max_age_days=0)
     assert job is not None
     assert job["url"].endswith("/beta-10")
+
+
+
+def test_acquire_rejects_unverified_eligibility(tmp_db, seed_job, monkeypatch):
+    """Direct apply queue must not treat legacy NULL eligibility as eligible."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="unverified",
+        application_url="https://boards.greenhouse.io/acme/jobs/unverified",
+        apply_status=None,
+        fit_score=10,
+        eligibility=None,
+        eligibility_status="unverified",
+        employment_type="unknown",
+        workplace_type="unknown",
+    )
+
+    assert acquire_job(min_score=8, max_age_days=0) is None
+
+
+
+def test_acquire_rejects_legacy_eligible_with_unverified_normalized_status(
+    tmp_db, seed_job, monkeypatch
+):
+    """A stale legacy 'eligible' flag cannot override normalized unverified status."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="legacy-eligible-unverified",
+        application_url="https://boards.greenhouse.io/acme/jobs/legacy",
+        apply_status=None,
+        fit_score=10,
+        eligibility="eligible",
+        eligibility_status="unverified",
+        employment_type="unknown",
+        workplace_type="unknown",
+    )
+
+    assert acquire_job(min_score=8, max_age_days=0) is None
+
+
+def test_acquire_rejects_applicant_country_unverified(tmp_db, seed_job, monkeypatch):
+    """A job that passed discovery but has no proof of UK applicant eligibility is held."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="applicant-unverified",
+        application_url="https://boards.greenhouse.io/acme/jobs/applicant-unverified",
+        apply_status=None, fit_score=10,
+        applicant_eligibility="unverified",
+        candidate_suitability="suitable",
+    )
+    assert acquire_job(min_score=8, max_age_days=0) is None
+
+
+def test_acquire_rejects_unsuitable_candidate(tmp_db, seed_job, monkeypatch):
+    """A job with an explicit experience mismatch cannot reach application."""
+    _setup_apply_env(monkeypatch)
+    from applypilot.apply.launcher import acquire_job
+
+    conn = tmp_db()
+    seed_job(
+        conn, url_suffix="candidate-unsuitable",
+        application_url="https://boards.greenhouse.io/acme/jobs/candidate-unsuitable",
+        apply_status=None, fit_score=10,
+        applicant_eligibility="eligible",
+        candidate_suitability="unsuitable",
+    )
+    assert acquire_job(min_score=8, max_age_days=0) is None

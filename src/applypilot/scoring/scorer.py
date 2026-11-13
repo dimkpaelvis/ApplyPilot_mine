@@ -11,8 +11,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
-from applypilot.config import RESUME_PATH, load_profile
+from applypilot.config import load_profile, load_resume_text
 from applypilot.database import get_connection, get_jobs_by_stage, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility
+from applypilot.matching import evaluate_job_match
 from applypilot.llm import get_client
 
 log = logging.getLogger(__name__)
@@ -20,189 +22,60 @@ log = logging.getLogger(__name__)
 
 # ── Scoring Prompt ────────────────────────────────────────────────────────
 
-SCORE_PROMPT_TEMPLATE = """You are a job fit evaluator. Given a candidate's resume and a job description, score how well the candidate fits the role.
+SCORE_PROMPT_TEMPLATE = """You are a rigorous UK-focused recruiter assessing a candidate for junior data, analytics, reporting and data operations roles.
 
-THE CANDIDATE: {candidate_summary}
+CANDIDATE PROFILE:
+{candidate_summary}
 
-⚠️ GEOGRAPHY CHECK — DO THIS FIRST, BEFORE ANYTHING ELSE:
-The candidate is US-based (Seattle, WA). Any role restricted to non-US geography is INELIGIBLE.
-Read the FULL description for buried sentences like "This role will be remote and based in the UK"
-or "Remote — Ontario, BC or Alberta". A perfect tech stack on a non-US role is still INELIGIBLE.
+LOCATION AND ELIGIBILITY:
+The candidate is based in Sheerness, Kent, United Kingdom. This search targets remote roles that can be performed from the UK. On-site and hybrid roles are not suitable; mark them ELIGIBILITY: non_remote_only. Prefer roles explicitly open to UK-based applicants; do not assume a role is UK-remote merely because it says "remote". Mark ELIGIBILITY: non_uk_only only when the posting clearly excludes UK-based applicants. If UK applicant eligibility is unclear, use unverified; never assume UK applicants are accepted from a generic Remote label. Explicit timezone or country-specific work-authorisation requirements must be flagged for review unless the candidate profile establishes a match.
 
-Output ELIGIBILITY: non_us_only when the role's hiring location is restricted to a non-US country
-even if the role is remote. Output ELIGIBILITY: eligible when the role is open to US workers
-(US-only, US-remote, global-remote, or no restriction).
+EMPLOYMENT TYPE:
+The candidate wants PART-TIME and FREELANCE/CONTRACT work. Full-time roles are not suitable and must be marked ELIGIBILITY: full_time_only when the posting explicitly identifies the role as full-time. Treat freelance, freelancer, independent contractor and contract engagements as contract work. Do not mistake a full-time role's mention of flexible hours, remote work, or a part-time team member for a part-time vacancy. If employment type is not stated, return ELIGIBILITY: unverified; do not assume it is part-time. If workplace type is not explicitly remote, return ELIGIBILITY: unverified or non_remote_only as appropriate. Never mark an unknown employment or workplace type eligible. This eligibility label does not establish the candidate's right to work or visa status.
 
-Common signals for non_us_only:
-- "based in (UK|Canada|Ireland|Germany|...)"
-- "Remote — (UK|Canada|Europe|EMEA|APAC)"
-- "(m/f/d)" / "(m/w/d)" German title suffix
-- UK/Canada right-to-work questions in the form
-- CET / GMT+N / IST timezone requirement
+TARGET ROLE FAMILIES:
+- Junior / entry-level Data Analyst
+- Data Operations Analyst / Data Administrator
+- Data Quality Analyst / Data Quality Assistant
+- Reporting Analyst / SQL Analyst
+- Junior BI Analyst
+- Junior Data Engineer (stretch target)
 
-If non_us_only, you MAY still produce a SCORE based on tech-stack fit (for audit), but the
-eligibility tag is what determines whether the application proceeds.
+SCORING:
+10: Exceptional match for the candidate's actual evidence and the role's level.
+9: Very strong match; most required tools and responsibilities are evidenced.
+7-8: Good match; core SQL, Excel, Python, data cleaning, reporting or database skills align, with manageable gaps.
+5-6: Partial match; meaningful transferable skills but important required skills or experience are missing.
+3-4: Weak match; role is mainly outside data/analytics or requires substantially more experience.
+1-2: Not relevant to the candidate's stated target roles.
 
-SCORING CRITERIA:
-- 10: Near-perfect IC engineering match. The role is a software/platform/infrastructure engineer position requiring the candidate's exact stack (Go/Kotlin/Python/Java, distributed systems, K8s). Seniority aligns (Senior/Staff/Principal). The candidate would be a top-tier applicant with minimal gaps.
-- 9: Excellent engineering match. Strong alignment on tech stack and seniority, with 1-2 gaps in secondary skills or slightly different domain.
-- 7-8: Good engineering match. Candidate has most required technical skills. Minor gaps in specific frameworks or domain experience, easily bridged.
-- 5-6: Moderate match. The role is engineering but uses a different primary stack, or there's a seniority mismatch (e.g., junior role or executive-only role with no IC component).
-- 3-4: Weak match. Engineering role but wrong specialization (frontend-only, mobile, ML research, data science), or a non-engineering role with some technical overlap.
-- 1-2: Poor match. Non-engineering role (recruiting, design, marketing, product management, sales), completely different field, OR non-US geographic restriction.
+ASSESSMENT RULES:
+- Evaluate junior and entry-level roles positively when the candidate's evidence aligns. Do not penalise a candidate simply for being early-career.
+- Remote + part-time or freelance/contract is a hard preference, not a bonus. Explicit full-time roles must receive ELIGIBILITY: full_time_only and a score of 1. Unknown employment type must be flagged as unconfirmed rather than represented as part-time.
+- Distinguish required skills from desirable skills.
+- Assess SQL, Excel, Python, pandas, MySQL, data cleaning, data validation, reconciliation, dashboards, reporting, ETL and data quality where relevant.
+- Do not assume commercial experience, production-scale engineering, cloud platforms, advanced statistics, degrees or certifications unless evidenced in the resume.
+- Flag required experience, tools, qualifications, location restrictions and work-authorisation conditions that are not established by the supplied evidence.
+- Do not advise the candidate to claim a skill or qualification they do not have.
+- Score the role's fit, not the employer's prestige.
 
-ADDITIONAL RULES:
-- Non-engineering roles (recruiters, designers, PMs, marketing, sales, executive search) score 1-2 MAX regardless of seniority or domain.
-- Roles requiring a specific language the candidate doesn't know (Rust, C++, Ruby, Scala, Clojure) as the PRIMARY requirement score 4-6 max depending on transferability.
-- "CTO" or "VP Engineering" roles that are purely management with no IC engineering component score 5-6 max.
-- LOCATION is N/A: check the description for any office/city requirement. If the description implies onsite in a specific US city outside Seattle/Bellevue/Kirkland/Redmond, cap at 7.
-- Distinguish REQUIRED skills from NICE-TO-HAVE. Only penalize for missing required skills.
-- Value transferable experience: workflow orchestration, distributed systems, microservices, developer platforms transfer across domains.
-
-You MUST include all four lines below. Do not skip REASONING.
-
-ELIGIBILITY: [eligible|non_us_only]
+Return exactly these four lines:
+ELIGIBILITY: [eligible|non_uk_only|full_time_only|non_remote_only|unverified]
 SCORE: [1-10]
-KEYWORDS: [comma-separated ATS keywords from the job description that match or could match the candidate]
-REASONING: [2-3 sentences explaining the score, what matched well, and any gaps. If non_us_only, name the country/region.]"""
-
-
-# ── Rule-based pre-filter (catches obvious ineligible before LLM call) ─────
-#
-# Patterns validated 2026-04-23 against 5,938 historical scored jobs.
-# Any pattern that would reject more than 1-2 jobs scored >=8 is omitted
-# (those rare false positives tend to be LLM mis-scores anyway — jobs
-# titled "Junior" / "Intern" don't belong in a Senior/Staff queue).
-
-# Patterns that make a job ineligible regardless of tech stack.
-# Checked against title + location field only (not full description, to avoid
-# false positives from US companies mentioning global offices).
-_INELIGIBLE_TITLE_PATTERNS = re.compile(
-    # Explicit non-US regions in title
-    r'\bEMEA\b'
-    r'|\bAPAC\b'
-    r'|\bLATAM\b'
-    r'|\bMENA\b'
-    r'|\bTOLA\b'                    # sales region: Texas/Oklahoma/Louisiana/Arkansas
-    r'|\bANZ\b'                     # Australia/New Zealand
-    r'|\bNordics\b'
-    r'|\bEU[- ]only\b'
-    r'|\bUK[- ]only\b'
-    r'|\bEurope[- ]only\b'
-    r'|\(m/[fw]/d\)'                # German job title suffix (m/f/d) or (m/w/d)
-    r'|\bm/[fw]/d\b'
-    r'|\bOnly hiring in\b'
-    # Seniority mismatches (user is Senior/Staff/Principal level)
-    r'|\bJunior\b'
-    r'|\bIntern(ship)?\b'
-    r'|\bFresher\b'
-    r'|\bEntry[- ]?Level\b'
-    r'|\bNew[- ]Grad\b'
-    r'|\bTrainee\b'
-    r'|\bApprentice\b'
-    # Sales-adjacency (not IC engineering)
-    r'|\bSales Engineer\b'
-    r'|\bSolutions Engineer\b'
-    r'|\bPre[- ]?[Ss]ales\b'
-    r'|\bCustomer Success Engineer\b'
-    # Retail / warehouse / service roles (filter out Costco + similar noise)
-    r'|\bCashier\b|\bBaker\b|\bCake Decorator\b|\bButcher\b|\bMeat Cutter\b'
-    r'|\bGas Station Attendant\b|\bPharmacy Technician\b|\bHearing Aid Dispenser\b'
-    r'|\bStocker\b|\bForklift\b|\bWarehouse Associate\b|\bTruck Driver\b'
-    r'|\bBakery Clerk\b|\bDeli Clerk\b|\bProduce Clerk\b|\bMember Service\b'
-    r'|\bOptician\b|\bOptical\b'
-    # More seniority — "Graduate Developer"/"Graduate Software Engineer" patterns
-    # Protected: "Graduate School", "Graduate Student" (those don't appear in job titles)
-    r'|\bGraduate\b'
-    # Non-engineering roles
-    r'|\bRecruiter\b'
-    r'|\bTalent Acquisition\b|\bTalent Scout\b|\bTalent Sourcer\b'
-    r'|\bAccount Manager\b|\bAccount Executive\b'
-    r'|\bUX Designer\b|\bUI Designer\b|\bProduct Designer\b|\bGraphic Designer\b'
-    # Specialist IC roles outside the target stack (mobile, legacy enterprise)
-    r'|\bAndroid Engineer\b|\biOS Engineer\b|\bMobile Engineer\b'
-    r'|\bSalesforce Developer\b|\bApex Developer\b'
-    r'|\bMainframe Engineer\b|\bCOBOL Developer\b|\bTIBCO\b',
-    re.IGNORECASE,
-)
-
-# Patterns checked against the location field specifically.
-# Location field explicitly lists a non-US country name → ineligible.
-_INELIGIBLE_LOCATION_PATTERNS = re.compile(
-    # Regions
-    r'\bEMEA\b'
-    r'|\bAPAC\b'
-    r'|\bEurope\b'
-    # Europe
-    r'|\bGermany\b|\bNetherlands\b|\bFrance\b|\bSpain\b|\bItaly\b'
-    r'|\bPoland\b|\bUkraine\b|\bCzech\b|\bPortugal\b|\bIreland\b'
-    r'|\bDenmark\b|\bSweden\b|\bNorway\b|\bFinland\b|\bBelgium\b'
-    r'|\bSwitzerland\b|\bAustria\b|\bRomania\b|\bHungary\b|\bCroatia\b'
-    r'|\bGreece\b|\bBulgaria\b|\bSerbia\b|\bSlovakia\b|\bSlovenia\b'
-    r'|\bEstonia\b|\bLatvia\b|\bLithuania\b'
-    # Asia
-    r'|\bIndia\b|\bSingapore\b|\bJapan\b|\bVietnam\b|\bThailand\b'
-    r'|\bPhilippines\b|\bIndonesia\b|\bKorea\b|\bTaiwan\b|\bHong Kong\b'
-    r'|\bChina\b|\bPakistan\b|\bBangladesh\b|\bMalaysia\b'
-    # Latin America
-    r'|\bBrazil\b|\bBrasil\b|\bMexico\b|\bMéxico\b|\bArgentina\b'
-    r'|\bChile\b|\bColombia\b|\bPeru\b|\bUruguay\b'
-    # Middle East / Africa
-    r'|\bEgypt\b|\bNigeria\b|\bKenya\b|\bSouth Africa\b|\bIsrael\b'
-    r'|\bTurkey\b|\bTürkiye\b|\bUAE\b|\bSaudi Arabia\b'
-    # Oceania
-    r'|\bAustralia\b|\bNew Zealand\b',
-    re.IGNORECASE,
-)
-
-# Description-level non-US patterns. Scans the full description (capped at
-# 6000 chars by the caller). Patterns intentionally narrow — must explicitly
-# RESTRICT to a non-US country, not merely mention global offices.
-# Tightened 2026-04-30 after Twilio UK/Canada slipped through the 800-char head.
-_INELIGIBLE_DESC_PATTERNS = re.compile(
-    r'Remote\s*[\(\-—–]\s*(EMEA|Europe|EU|UK|United\s+Kingdom|Germany|India|Canada|Ireland|Netherlands|Brazil|Mexico|Argentina|Colombia|Australia|New\s+Zealand)'
-    r'|EMEA\s*(only|region|remote|based)'
-    r'|(Europe|European)\s*(only|Time\s*Zone|timezone|based|remote)'
-    # Belt-and-suspenders: catches "based in (the) UK", "based in Europe", etc.
-    r'|based\s+in\s+(the\s+)?(Europe|EU|UK|United\s+Kingdom|Germany|India|Netherlands|Canada|Ireland|France|Spain|Italy|Brazil|Mexico|Australia|New\s+Zealand|Singapore|Japan|Israel|South\s+Africa|Portugal|Poland|Romania)'
-    r'|will\s+be\s+remote\s+and\s+based\s+in\s+(the\s+)?(UK|United\s+Kingdom|Canada|Ireland|Germany|Europe|EMEA|India)'
-    # Canadian-province patterns (Twilio L3 example)
-    r'|Remote\s+(in|from|—|-)\s*(Ontario|British\s+Columbia|Alberta|Quebec|Manitoba|Nova\s+Scotia|Saskatchewan)'
-    r'|Ontario,\s*British\s+Columbia'
-    # UK/Canada right-to-work questions on the form (often mirrored in JD)
-    r"|right\s+to\s+work\s+in\s+(the\s+)?(UK|United\s+Kingdom|Canada|Ireland|EU|European\s+Union)"
-    r"|requires?\s+(the\s+)?right\s+to\s+work\s+in\s+(the\s+)?(UK|United\s+Kingdom|Canada|Ireland|EU)"
-    # Timezone restrictions
-    r'|CET\s+timezone'
-    r'|GMT[+\-]\d+\s+timezone'
-    r'|IST\s+timezone',
-    re.IGNORECASE,
-)
-
-# Window scanned for description-level patterns. Bumped from 800 to 6000 chars
-# 2026-04-30 — Twilio buried the UK restriction in a paragraph below the
-# requirements list, past the 800-char head.
-_DESC_SCAN_CHARS = 6000
+KEYWORDS: [comma-separated relevant ATS keywords that are genuinely supported or clearly adjacent to the candidate's evidence]
+REASONING: [2-4 sentences covering match, gaps, seniority, location restrictions and any critical eligibility questions.]
+"""
 
 
 def _check_ineligible(job: dict) -> str | None:
-    """Return an ineligibility reason if the job is obviously non-US, else None.
+    """Defer eligibility decisions to the UK-focused LLM assessment.
 
-    Checked before the LLM call to save tokens and ensure consistency.
-    Scans title, location field, and the first ``_DESC_SCAN_CHARS`` of the
-    description.
+    A deterministic title/location pre-filter previously rejected junior
+    roles and non-US locations. That behaviour is incompatible with this
+    UK-based junior-data-role search. It also cannot reliably distinguish
+    a location restriction from incidental country mentions or infer
+    right-to-work status. Return None and let the full posting be assessed.
     """
-    title = job.get("title") or ""
-    location = job.get("location") or ""
-    desc_head = (job.get("full_description") or "")[:_DESC_SCAN_CHARS]
-
-    if _INELIGIBLE_TITLE_PATTERNS.search(title):
-        return f"non-US geography in title: {title}"
-    if location and _INELIGIBLE_LOCATION_PATTERNS.search(location):
-        return f"non-US location field: {location}"
-    m = _INELIGIBLE_DESC_PATTERNS.search(desc_head)
-    if m:
-        return f"non-US geography in description: {m.group(0)[:80]}"
     return None
 
 
@@ -213,25 +86,33 @@ def _parse_score_response(response: str) -> dict:
         response: Raw LLM response text.
 
     Returns:
-        {"score": int, "keywords": str, "reasoning": str, "eligibility": str}
-        eligibility is one of: 'eligible' | 'non_us_only'.
-        Older models that omit ELIGIBILITY default to 'eligible' (preserves
-        prior behavior; new prompt requires the line so absence is rare).
+        A dictionary containing score, keywords, reasoning and eligibility.
+        Legacy 'non_us_only' values are normalised to 'non_uk_only'.
     """
     score = 0
     keywords = ""
     reasoning = response
-    eligibility = "eligible"
+    eligibility = "unverified"
 
     for line in response.split("\n"):
         line = line.strip()
         if line.startswith("ELIGIBILITY:"):
             value = line.replace("ELIGIBILITY:", "").strip().lower()
             value = re.sub(r"[\[\]\s]+", "_", value).strip("_")
-            if "non" in value and "us" in value:
-                eligibility = "non_us_only"
-            else:
+            if value in {"full_time_only", "fulltime_only", "full_time", "fulltime"}:
+                eligibility = "full_time_only"
+            elif value in {"non_remote_only", "onsite_only", "on_site_only", "hybrid_only"}:
+                eligibility = "non_remote_only"
+            elif value in {"non_uk_only", "non_us_only"} or (
+                value.startswith("non_") and ("uk" in value or "us" in value)
+            ):
+                eligibility = "non_uk_only"
+            elif value == "eligible":
                 eligibility = "eligible"
+            elif value in {"unverified", "unknown", "not_verified", "employment_type_unverified", "workplace_type_unverified"}:
+                eligibility = "unverified"
+            else:
+                eligibility = "unverified"
         elif line.startswith("SCORE:"):
             try:
                 score = int(re.search(r"\d+", line).group())
@@ -248,20 +129,22 @@ def _parse_score_response(response: str) -> dict:
 
 
 def _build_candidate_summary(profile: dict) -> str:
-    """Build a candidate summary string from profile for the scoring prompt."""
+    """Build a concise candidate summary using both supported profile layouts."""
     exp = profile.get("experience", {})
     boundary = profile.get("skills_boundary", {})
-    years = exp.get("years_of_experience_total", "several")
-    current_title = exp.get("current_job_title", "Software Engineer")
-    target = exp.get("target_role", "Software Engineer")
-    languages = boundary.get("languages", [])
-    platforms = boundary.get("platforms", [])
+    years = exp.get("years_of_experience_total") or "early-career"
+    current_title = exp.get("current_job_title") or exp.get("current_title") or "Early-career data professional"
+    targets = profile.get("target_roles") or [exp.get("target_role") or "Data Analyst"]
+    languages = boundary.get("languages") or boundary.get("programming_languages") or []
+    platforms = list(boundary.get("platforms") or [])
+    platforms += boundary.get("databases") or []
+    platforms += boundary.get("tools") or []
     parts = [f"{current_title} with {years} years experience."]
     if languages:
-        parts.append(f"Primary stack: {', '.join(languages[:8])}.")
+        parts.append(f"Languages: {', '.join(languages[:8])}.")
     if platforms:
-        parts.append(f"Platforms: {', '.join(platforms[:6])}.")
-    parts.append(f"Targets: {target}.")
+        parts.append(f"Platforms and tools: {', '.join(platforms[:10])}.")
+    parts.append(f"Target roles: {', '.join(targets[:8])}.")
     return " ".join(parts)
 
 
@@ -273,22 +156,38 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
         job: Job dict with keys: title, site, location, full_description.
 
     Returns:
-        {"score": int, "keywords": str, "reasoning": str}
+        A dictionary containing score, keywords, reasoning and eligibility.
     """
     if profile is None:
         profile = load_profile()
 
-    # Rule-based pre-filter: catch obvious non-US ineligible jobs before LLM call.
-    # Tags eligibility=non_us_only so downstream stages skip the job; the score
-    # is still recorded so audit views can see the original LLM-style severity.
+    # Re-check canonical fields before scoring. This also protects legacy or
+    # manually-added rows that bypassed a discovery adapter.
+    normalized = classify_job_eligibility(job, require_remote=True)
+    if normalized["eligibility_status"] != "eligible":
+        reason = normalized["eligibility_reason"] or "eligibility_unverified"
+        if normalized["employment_type"] == "full_time":
+            label = "full_time_only"
+        elif normalized["workplace_type"] in {"hybrid", "onsite"}:
+            label = "non_remote_only"
+        else:
+            label = "unverified"
+        log.info("Eligibility gate rejected %s: %s", (job.get("title") or "?")[:60], reason)
+        return {
+            "score": 1,
+            "keywords": "",
+            "reasoning": f"Not scored: {reason}.",
+            "eligibility": label,
+        }
+
     ineligible_reason = _check_ineligible(job)
     if ineligible_reason:
-        log.info("Pre-filter INELIGIBLE (non_us_only): %s — %s", (job.get("title") or "?")[:60], ineligible_reason)
+        log.info("Pre-filter INELIGIBLE (non_uk_only): %s — %s", (job.get("title") or "?")[:60], ineligible_reason)
         return {
             "score": 2,
             "keywords": "",
-            "reasoning": f"Ineligible: {ineligible_reason}. Candidate is US-based.",
-            "eligibility": "non_us_only",
+            "reasoning": f"Ineligible: {ineligible_reason}.",
+            "eligibility": "non_uk_only",
         }
 
     try:
@@ -297,7 +196,7 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
 
         job_text = (
             f"TITLE: {job['title']}\n"
-            f"COMPANY: {job['site']}\n"
+            f"COMPANY: {job.get('company') or 'Unknown employer'}\n"
             f"LOCATION: {job.get('location', 'N/A')}\n\n"
             f"DESCRIPTION:\n{(job.get('full_description') or '')[:6000]}"
         )
@@ -309,7 +208,9 @@ def score_job(resume_text: str, job: dict, profile: dict | None = None) -> dict:
 
         client = get_client()
         response = client.chat(messages, max_tokens=8192, temperature=0.2)
-        return _parse_score_response(response)
+        result = _parse_score_response(response)
+        result.update(evaluate_job_match(job, profile, fit_score=result.get("score")))
+        return result
     except Exception as e:
         log.error("LLM error scoring job '%s': %s", (job or {}).get("title") or "?", e)
         return {"score": None, "keywords": "", "reasoning": "", "eligibility": None,
@@ -337,21 +238,35 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
 
     for r in batch:
         if r["score"] is not None:
-            eligibility = r.get("eligibility") or "eligible"
+            eligibility = r.get("eligibility") or "unverified"
             conn.execute(
                 "UPDATE jobs SET fit_score = ?, score_reasoning = ?, scored_at = ?, "
-                "eligibility = ?, "
+                "eligibility = ?, eligibility_status = ?, eligibility_reason = ?, "
+                "applicant_eligibility = ?, applicant_eligibility_reason = ?, "
+                "candidate_suitability = ?, suitability_score = ?, flexible_score = ?, "
+                "suitability_reason = ?, flexible_criteria_met = ?, decision_route = ?, "
+                "auto_apply_qualified = ?, "
                 "score_error = NULL, score_attempts = 0, score_next_retry_at = NULL "
                 "WHERE url = ?",
                 (r["score"], f"{r['keywords']}\n{r['reasoning']}", now, eligibility,
+                 "eligible" if eligibility == "eligible" else (
+                     "unverified" if eligibility == "unverified" else "rejected"
+                 ),
+                 None if eligibility == "eligible" else eligibility,
+                 r.get("applicant_eligibility", "unverified"),
+                 r.get("applicant_eligibility_reason"),
+                 r.get("candidate_suitability", "review"),
+                 r.get("suitability_score", 50),
+                 r.get("flexible_score", 0),
+                 r.get("suitability_reason"),
+                 r.get("flexible_criteria_met", 0),
+                 r.get("decision_route", "review_required"),
+                 r.get("auto_apply_qualified", 0),
                  r["url"]),
             )
-            # Eligibility-driven state transition. Non-US roles go straight to
-            # `archived` (terminal) so tailor/cover/apply never pick them up,
-            # bypassing the scored→tailored→ready_to_apply chain entirely.
-            if eligibility == "non_us_only":
+            if eligibility != "eligible":
                 transition_state(conn, r["url"], "archived",
-                                 reason="non_us_only employer/role",
+                                 reason=f"ineligible or unverified: {eligibility}",
                                  metadata={"score": r["score"],
                                            "eligibility": eligibility},
                                  force=True)
@@ -362,13 +277,11 @@ def _flush_score_batch(conn, batch: list[dict], now: str) -> None:
                                  metadata={"score": r["score"],
                                            "eligibility": eligibility})
         else:
-            # LLM failure — keep fit_score NULL so it stays in pending_score
             row = conn.execute(
                 "SELECT COALESCE(score_attempts, 0) FROM jobs WHERE url = ?", (r["url"],)
             ).fetchone()
             retry_count = row[0] if row else 0
             if retry_count >= MAX_SCORE_RETRIES:
-                # Give up — write score_error but don't schedule another retry
                 conn.execute(
                     "UPDATE jobs SET score_error = ?, score_attempts = ?, "
                     "score_next_retry_at = NULL, scored_at = ? WHERE url = ?",
@@ -403,7 +316,7 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
     Returns:
         {"scored": int, "errors": int, "elapsed": float, "distribution": list}
     """
-    resume_text = RESUME_PATH.read_text(encoding="utf-8")
+    resume_text = load_resume_text()
     conn = get_connection()
 
     if rescore:
@@ -412,9 +325,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
             query += f" LIMIT {limit}"
         jobs = conn.execute(query).fetchall()
     else:
-        # Note: get_jobs_by_stage now applies a 14-day discovered_at filter by
-        # default (config.DEFAULTS["max_job_age_days"]). Pass max_age_days=0
-        # to disable.
         jobs = get_jobs_by_stage(conn=conn, stage="pending_score",
                                  max_age_days=max_age_days, limit=limit)
 
@@ -422,7 +332,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
         log.info("No unscored jobs with descriptions found.")
         return {"scored": 0, "errors": 0, "elapsed": 0.0, "distribution": []}
 
-    # Convert sqlite3.Row to dicts if needed
     if jobs and not isinstance(jobs[0], dict):
         columns = jobs[0].keys()
         jobs = [dict(zip(columns, row)) for row in jobs]
@@ -431,7 +340,7 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
     t0 = time.time()
     completed = 0
     errors = 0
-    batch_size = 25  # Commit every N jobs so downstream stages see results sooner
+    batch_size = 25
     batch: list[dict] = []
 
     def _score_one(job: dict) -> dict:
@@ -489,7 +398,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
             if len(batch) >= batch_size:
                 batch = _flush_and_log(batch, completed)
 
-    # Flush remaining
     if batch:
         now = datetime.now(timezone.utc).isoformat()
         try:
@@ -500,7 +408,6 @@ def run_scoring(limit: int = 0, rescore: bool = False, workers: int = 1,
     elapsed = time.time() - t0
     log.info("Done: %d scored in %.1fs (%.1f jobs/sec)", completed, elapsed, completed / elapsed if elapsed > 0 else 0)
 
-    # Score distribution
     try:
         dist = conn.execute("""
             SELECT fit_score, COUNT(*) FROM jobs

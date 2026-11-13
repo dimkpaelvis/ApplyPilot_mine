@@ -168,7 +168,7 @@ def init_db(db_path: Path | str | None = None) -> sqlite3.Connection:
             strategy              TEXT,
             discovered_at         TEXT,
 
-            -- Company (extracted from application_url domain)
+            -- Company (employer name supplied by the discovery source)
             company               TEXT,
 
             -- Enrichment stage (detail_scraper)
@@ -292,6 +292,22 @@ _ALL_COLUMNS: dict[str, str] = {
     "strategy": "TEXT",
     "discovered_at": "TEXT",
     "posted_at": "TEXT",                     # original posting date from the employer/board
+    "employment_type": "TEXT",                # part_time | contract | full_time | other | unknown
+    "workplace_type": "TEXT",                 # remote | hybrid | onsite | unknown
+    "eligibility_status": "TEXT DEFAULT 'unverified'",
+    "eligibility_reason": "TEXT",
+    "applicant_eligibility": "TEXT",
+    "applicant_eligibility_reason": "TEXT",
+    "candidate_suitability": "TEXT",
+    "suitability_score": "INTEGER",
+    "flexible_score": "INTEGER",
+    "suitability_reason": "TEXT",
+    "flexible_criteria_met": "INTEGER DEFAULT 0",
+    "decision_route": "TEXT",
+    "auto_apply_qualified": "INTEGER DEFAULT 0",
+    "review_decision": "TEXT",                 # approved | rejected | hold; imported from Sheets
+    "review_notes": "TEXT",
+    "reviewed_at": "TEXT",
     # Canonical pipeline state. Enum enforced in Python (see VALID_STATES)
     # rather than a SQL CHECK — SQLite can't easily add CHECKs post-hoc.
     "state": "TEXT DEFAULT 'discovered'",
@@ -312,7 +328,7 @@ _ALL_COLUMNS: dict[str, str] = {
     "score_error": "TEXT",                 # set when all LLM providers failed; fit_score stays NULL
     # 2026-04-30: terminal eligibility tag set by scorer.
     # Values: NULL (not yet evaluated) | 'eligible' | 'non_us_only'.
-    # Tailor/cover/apply gate on eligibility = 'eligible' OR IS NULL.
+    # Tailor/cover/apply require both the scorer decision and discovery eligibility to be explicitly eligible.
     "eligibility": "TEXT",
     # (score_attempts → score_attempts via _COLUMN_RENAMES below)
     # Tailoring
@@ -923,7 +939,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "SELECT COUNT(*) FROM jobs "
         "WHERE fit_score >= ? AND full_description IS NOT NULL "
         "AND tailored_resume_path IS NULL "
-        "AND (eligibility IS NULL OR eligibility = 'eligible')",
+        "AND eligibility = 'eligible' AND eligibility_status = 'eligible'",
         (_DEFAULTS["min_score"],),
     ).fetchone()[0]
 
@@ -958,7 +974,7 @@ def get_stats(conn: sqlite3.Connection | None = None) -> dict:
         "WHERE tailored_resume_path IS NOT NULL "
         "AND applied_at IS NULL "
         "AND application_url IS NOT NULL "
-        "AND (eligibility IS NULL OR eligibility = 'eligible')"
+        "AND (eligibility = 'eligible' AND eligibility_status = 'eligible')"
     ).fetchone()[0]
 
     stats["needs_human"] = conn.execute(
@@ -1235,13 +1251,29 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
         Tuple of (new_count, duplicate_count).
     """
     now = datetime.now(timezone.utc).isoformat()
-    counts = {"new": 0, "existing": 0}
+    counts = {"new": 0, "existing": 0, "capped": 0}
 
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    from applypilot.config import load_search_config
     from applypilot.discovery.url_normalize import canonicalize_application_url
 
+    search_config = load_search_config() or {}
+    defaults = search_config.get("defaults", {})
+    daily_limit = int(defaults.get("daily_unique_job_limit", 50))
+    timezone_name = str(defaults.get("daily_unique_timezone", "Europe/London"))
+    try:
+        local_tz = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        _log.warning("Invalid daily_unique_timezone %r; using UTC.", timezone_name)
+        local_tz = timezone.utc
+    local_midnight = datetime.now(local_tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start_utc = local_midnight.astimezone(timezone.utc).isoformat()
+
     def _do_inserts() -> None:
-        counts["new"] = 0
-        counts["existing"] = 0
+        counts.update({"new": 0, "existing": 0, "capped": 0})
+        daily_count = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE discovered_at >= ?", (day_start_utc,)
+        ).fetchone()[0]
         for job in jobs:
             url = job.get("url")
             if not url:
@@ -1256,6 +1288,14 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             # Greenhouse) so the apply agent never sees the iframe parent.
             url = canonicalize_application_url(url)
 
+            # Duplicates do not consume the daily quota.
+            if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone():
+                counts["existing"] += 1
+                continue
+            if daily_limit > 0 and daily_count >= daily_limit:
+                counts["capped"] += 1
+                continue
+
             try:
                 conn.execute(
                     "INSERT INTO jobs (url, title, salary, description, location, site, strategy, discovered_at) "
@@ -1263,11 +1303,20 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                     (url, job.get("title"), job.get("salary"), job.get("description"),
                      job.get("location"), site, strategy, now),
                 )
-                counts["new"] += 1
             except sqlite3.IntegrityError:
+                # Preserve duplicate safety if another discovery worker inserted
+                # the same canonical URL after the pre-check above.
                 counts["existing"] += 1
+                continue
+            counts["new"] += 1
+            daily_count += 1
 
     write_with_retry(conn, _do_inserts)
+    if counts["capped"]:
+        _log.warning(
+            "Daily unique-job discovery limit reached (%d). Skipped %d additional new listing(s).",
+            daily_limit, counts["capped"],
+        )
     return counts["new"], counts["existing"]
 
 
@@ -1552,32 +1601,30 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
             "full_description IS NOT NULL AND ("
             "  (fit_score IS NULL AND score_error IS NULL) "
             "  OR (score_error IS NOT NULL AND score_attempts < 5 "
-            "      AND (score_next_retry_at IS NULL OR score_next_retry_at <= datetime('now')))"
+            "      AND (score_next_retry_at IS NULL OR julianday(score_next_retry_at) <= julianday('now')))"
             ")"
         ),
         "scored": "fit_score IS NOT NULL",
         # 2026-04-30: gate every paid stage on eligibility.
-        # `non_us_only` rows are terminal-archived by the scorer and must
-        # never enter tailor/cover/apply. `eligibility IS NULL` covers
-        # legacy rows scored before the column existed (they pre-date the
-        # filter and pass through unchanged).
+        # Only explicitly eligible rows may enter tailor/cover/apply.
+        # Legacy NULL eligibility is unverified and must fail closed.
         "pending_tailor": (
             "fit_score >= ? AND full_description IS NOT NULL "
             "AND tailored_resume_path IS NULL AND COALESCE(tailor_attempts, 0) < 5 "
-            "AND (eligibility IS NULL OR eligibility = 'eligible')"
+            "AND (eligibility = 'eligible' AND eligibility_status = 'eligible')"
         ),
         "pending_cover": (
             "fit_score >= ? AND tailored_resume_path IS NOT NULL "
             "AND full_description IS NOT NULL "
             "AND (cover_letter_path IS NULL OR cover_letter_path = '') "
             "AND COALESCE(cover_attempts, 0) < 5 "   # keep in sync with cover_letter.MAX_ATTEMPTS
-            "AND (eligibility IS NULL OR eligibility = 'eligible')"
+            "AND (eligibility = 'eligible' AND eligibility_status = 'eligible')"
         ),
         "tailored": "tailored_resume_path IS NOT NULL",
         "pending_apply": (
             "tailored_resume_path IS NOT NULL AND applied_at IS NULL "
             "AND application_url IS NOT NULL "
-            "AND (eligibility IS NULL OR eligibility = 'eligible')"
+            "AND (eligibility = 'eligible' AND eligibility_status = 'eligible')"
         ),
         "applied": "applied_at IS NOT NULL",
     }
@@ -1595,7 +1642,7 @@ def get_jobs_by_stage(conn: sqlite3.Connection | None = None,
     # Age filter: only active when max_age_days > 0.
     # NULL discovered_at is excluded because `col > val` is NULL (→ falsy in WHERE).
     if max_age_days > 0:
-        where += " AND discovered_at > datetime('now', ?)"
+        where += " AND julianday(discovered_at) > julianday('now', ?)"
         params.append(f"-{max_age_days} days")
 
     query = f"""

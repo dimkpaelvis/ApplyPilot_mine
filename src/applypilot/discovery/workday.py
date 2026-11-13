@@ -23,6 +23,7 @@ import yaml
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import get_connection, init_db, write_with_retry
+from applypilot.discovery.eligibility import classify_job_eligibility, normalize_employment_type
 
 log = logging.getLogger(__name__)
 
@@ -187,6 +188,21 @@ def workday_detail(employer: dict, external_path: str) -> dict:
 
 # -- Search + paginate -------------------------------------------------------
 
+def _summary_employment_rejected(job: dict) -> bool:
+    """Reject only explicit full-time/non-target employment types in search metadata.
+
+    Workday search summaries commonly expose bulletFields such as "Full time".
+    Filtering only explicit disallowed values avoids guessing when the summary
+    omits employment type; unknown summaries still go through detail validation.
+    """
+    bullet_fields = job.get("bullet_fields") or []
+    if isinstance(bullet_fields, str):
+        bullet_fields = [bullet_fields]
+    summary = " ".join(str(value) for value in bullet_fields if value)
+    employment = normalize_employment_type(None, summary, job.get("title") or "")
+    return employment in {"full_time", "other"}
+
+
 def search_employer(
     employer_key: str,
     employer: dict,
@@ -256,6 +272,7 @@ def search_employer(
                 "title": j.get("title", ""),
                 "location": loc,
                 "posted": j.get("postedOn", ""),
+                "bullet_fields": j.get("bulletFields") or [],
                 "external_path": j.get("externalPath", ""),
                 "employer_key": employer_key,
                 "employer_name": employer["name"],
@@ -340,6 +357,15 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
         counts["new"] = 0
         counts["existing"] = 0
         for job in jobs:
+            eligibility = classify_job_eligibility({
+                **job,
+                "employment_type": job.get("time_type"),
+                "workplace_type": job.get("remote_type"),
+            }, require_remote=True)
+            if eligibility["eligibility_status"] != "eligible":
+                log.debug("Workday filtered %s before insert: %s",
+                          job.get("title", ""), eligibility["eligibility_reason"])
+                continue
             url = job.get("apply_url", "")
             if not url:
                 emp = employers.get(job.get("employer_key", ""), {})
@@ -354,21 +380,32 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
             detail_scraped_at = now if full_description else None
             detail_error = job.get("detail_error")
 
-            site = job.get("employer_name", "Corporate")
+            company = str(job.get("employer_name") or "").strip() or None
+            site = "workday"
             strategy = "workday_api"
 
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
-                    "detail_scraped_at, detail_error) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "detail_scraped_at, detail_error, employment_type, workplace_type, "
+                    "eligibility_status, eligibility_reason) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, short_desc, job.get("location"),
-                     site, strategy, now, job.get("posted_at"), full_description, url,
-                     detail_scraped_at, detail_error),
+                     site, company, strategy, now, job.get("posted_at"), full_description, url,
+                     detail_scraped_at, detail_error, eligibility["employment_type"],
+                     eligibility["workplace_type"], eligibility["eligibility_status"],
+                     eligibility["eligibility_reason"]),
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                # Repair legacy Workday rows that stored the employer in site
+                # and left company empty. Keep the source label consistent.
+                conn.execute(
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'workday' "
+                    "WHERE url = ? AND strategy = 'workday_api'",
+                    (company, url),
+                )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
@@ -402,6 +439,19 @@ def _process_one(
         return {"employer": emp["name"], "query": search_text,
                 "found": 0, "new": 0, "existing": 0}
 
+    summary_count = len(jobs)
+    jobs = [job for job in jobs if not _summary_employment_rejected(job)]
+    skipped_summary = summary_count - len(jobs)
+    if skipped_summary:
+        log.info(
+            "%s: skipped %d explicit full-time/non-target listings from search summaries",
+            emp["name"], skipped_summary,
+        )
+    if not jobs:
+        return {"employer": emp["name"], "query": search_text,
+                "found": summary_count, "new": 0, "existing": 0,
+                "summary_filtered": skipped_summary}
+
     try:
         jobs = fetch_details(emp, jobs)
     except Exception as e:
@@ -412,7 +462,8 @@ def _process_one(
     log.info("%s: %d new, %d already in DB", emp["name"], new, existing)
 
     return {"employer": emp["name"], "query": search_text,
-            "found": len(jobs), "new": new, "existing": existing}
+            "found": summary_count, "summary_filtered": skipped_summary,
+            "new": new, "existing": existing}
 
 
 # -- Main orchestrator -------------------------------------------------------
