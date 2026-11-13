@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 
 from applypilot import config
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, record_discovery_insert, reset_discovery_quota_window, write_with_retry)
 from applypilot.discovery.eligibility import classify_job_eligibility
 
 log = logging.getLogger(__name__)
@@ -157,6 +157,7 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
         counts["new"] = 0
         counts["existing"] = 0
         counts["capped"] = 0
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             url = job.get("url")
             if not url:
@@ -190,6 +191,7 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
                     (url, initial_state, now, "discovered via costco_careers", None),
                 )
                 counts["new"] += 1
+                record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 conn.execute(
                     "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'costco' "
