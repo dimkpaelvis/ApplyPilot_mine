@@ -30,6 +30,8 @@ from applypilot.database import (
     get_daily_discovery_quota_window,
     init_db,
     log_discovery_quota_capped,
+    record_discovery_insert,
+    reset_discovery_quota_window,
     write_with_retry,
 )
 from applypilot.discovery.eligibility import classify_job_eligibility
@@ -237,6 +239,7 @@ def _store_hn_job(
     def _do_inserts() -> None:
         integrity_failed["v"] = False
         capped["v"] = False
+        reset_discovery_quota_window(quota_window)
         if check_discovery_admission(conn, url, quota_window) == "capped":
             capped["v"] = True
             return
@@ -257,6 +260,7 @@ def _store_hn_job(
                 "VALUES (?, NULL, ?, ?, ?, ?)",
                 (url, initial_state, now, "discovered via hackernews", None),
             )
+            record_discovery_insert(quota_window)
         except sqlite3.IntegrityError:
             conn.execute(
                 "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = 'hackernews' "
