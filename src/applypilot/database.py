@@ -1296,6 +1296,17 @@ def check_discovery_admission(
     return "capped" if daily_count >= daily_limit else "allowed"
 
 
+def log_discovery_quota_capped(
+    source: str, capped_count: int, quota_window: tuple[int, str]
+) -> None:
+    """Emit one concise warning when a source is stopped by the shared cap."""
+    if capped_count:
+        _log.warning(
+            "%s: daily unique-job discovery limit reached (%d); skipped %d new listing(s).",
+            source, quota_window[0], capped_count,
+        )
+
+
 def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                site: str, strategy: str) -> tuple[int, int]:
     """Store discovered jobs, skipping duplicates and enforcing the global cap.
@@ -1349,11 +1360,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
             counts["new"] += 1
 
     write_with_retry(conn, _do_inserts)
-    if counts["capped"]:
-        _log.warning(
-            "Daily unique-job discovery limit reached (%d). Skipped %d additional new listing(s).",
-            quota_window[0], counts["capped"],
-        )
+    log_discovery_quota_capped(site, counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 def store_account(conn: sqlite3.Connection, account: dict,
