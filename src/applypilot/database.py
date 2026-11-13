@@ -1234,12 +1234,11 @@ def _resolve_url(url: str, site: str) -> str | None:
     return None
 
 
-def get_daily_discovery_quota_window() -> tuple[int, str]:
-    """Return the configured daily limit and this local day's UTC start.
+def get_daily_discovery_quota_window() -> dict:
+    """Return one batch's quota settings and lazily initialized count.
 
-    A limit of 0 (or a negative value, preserving legacy behavior) disables
-    the cap. The window is computed once per discovery batch so a run that
-    crosses midnight does not change its admission rules halfway through.
+    The local-day boundary is snapshotted once per discovery batch. A limit
+    of 0 (or a negative value, preserving legacy behavior) disables the cap.
     """
     from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
     from applypilot.config import load_search_config
@@ -1256,28 +1255,39 @@ def get_daily_discovery_quota_window() -> tuple[int, str]:
     local_midnight = datetime.now(local_tz).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    return daily_limit, local_midnight.astimezone(timezone.utc).isoformat()
+    return {
+        "daily_limit": daily_limit,
+        "day_start_utc": local_midnight.astimezone(timezone.utc).isoformat(),
+        "daily_count": None,
+    }
+
+
+def reset_discovery_quota_window(quota_window: dict) -> None:
+    """Reset the cached count when write_with_retry replays a rolled-back batch."""
+    quota_window["daily_count"] = None
+
+
+def record_discovery_insert(quota_window: dict) -> None:
+    """Increment this batch's cached count after a successful new-job INSERT."""
+    if quota_window["daily_limit"] > 0 and quota_window["daily_count"] is not None:
+        quota_window["daily_count"] += 1
 
 
 def check_discovery_admission(
     conn: sqlite3.Connection,
     url: str,
-    quota_window: tuple[int, str] | None = None,
+    quota_window: dict | None = None,
 ) -> str:
-    """Check whether a discovery adapter may insert a new unique job.
+    """Return "allowed" or "capped" for a unique discovery listing.
 
-    Returns "allowed" or "capped". Existing URLs return "allowed" so the
-    adapter's existing duplicate handler can still repair metadata.
-
-    For an enabled quota, BEGIN IMMEDIATE serializes the count-and-insert
-    decision across concurrent discovery workers/processes. The caller's
-    write_with_retry() owns commit/rollback and retries the whole batch.
-    Existing URLs are checked before the cap, so duplicates never consume
-    quota and can still be repaired by the caller.
+    Existing URLs return "allowed" so the adapter's duplicate handler can
+    repair metadata without consuming quota. For enabled quotas, BEGIN
+    IMMEDIATE serializes the count-and-insert decision across workers. The
+    caller's write_with_retry() owns commit/rollback and replays the batch.
     """
     if quota_window is None:
         quota_window = get_daily_discovery_quota_window()
-    daily_limit, day_start_utc = quota_window
+    daily_limit = quota_window["daily_limit"]
 
     if daily_limit > 0 and not conn.in_transaction:
         conn.execute("BEGIN IMMEDIATE")
@@ -1288,22 +1298,23 @@ def check_discovery_admission(
     if daily_limit <= 0:
         return "allowed"
 
-    daily_count = conn.execute(
-        "SELECT COUNT(*) FROM jobs "
-        "WHERE discovered_at >= ? AND strategy IS NOT NULL",
-        (day_start_utc,),
-    ).fetchone()[0]
-    return "capped" if daily_count >= daily_limit else "allowed"
+    if quota_window["daily_count"] is None:
+        quota_window["daily_count"] = conn.execute(
+            "SELECT COUNT(*) FROM jobs "
+            "WHERE discovered_at >= ? AND strategy IS NOT NULL",
+            (quota_window["day_start_utc"],),
+        ).fetchone()[0]
 
+    return "capped" if quota_window["daily_count"] >= daily_limit else "allowed"
 
 def log_discovery_quota_capped(
-    source: str, capped_count: int, quota_window: tuple[int, str]
+    source: str, capped_count: int, quota_window: dict
 ) -> None:
     """Emit one concise warning when a source is stopped by the shared cap."""
     if capped_count:
         _log.warning(
             "%s: daily unique-job discovery limit reached (%d); skipped %d new listing(s).",
-            source, quota_window[0], capped_count,
+            source, quota_window["daily_limit"], capped_count,
         )
 
 
@@ -1327,6 +1338,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
 
     def _do_inserts() -> None:
         counts.update({"new": 0, "existing": 0, "capped": 0})
+        reset_discovery_quota_window(quota_window)
         for job in jobs:
             url = job.get("url")
             if not url:
@@ -1358,6 +1370,7 @@ def store_jobs(conn: sqlite3.Connection, jobs: list[dict],
                     continue
                 raise
             counts["new"] += 1
+            record_discovery_insert(quota_window)
 
     write_with_retry(conn, _do_inserts)
     log_discovery_quota_capped(site, counts["capped"], quota_window)
