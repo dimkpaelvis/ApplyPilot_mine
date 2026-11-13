@@ -144,9 +144,10 @@ def insert_normalized_jobs(
                 record_discovery_insert(quota_window)
             except sqlite3.IntegrityError:
                 conn.execute(
-                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), site = ? "
-                    "WHERE url = ? AND strategy = ?",
-                    (company, site, url, strategy),
+                    "UPDATE jobs SET company = COALESCE(NULLIF(company, ''), ?), "
+                    "site = CASE WHEN strategy = ? THEN ? ELSE site END "
+                    "WHERE url = ?",
+                    (company, strategy, site, url),
                 )
                 counts["existing"] += 1
 
