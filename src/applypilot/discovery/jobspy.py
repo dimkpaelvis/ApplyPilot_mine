@@ -51,6 +51,7 @@ except Exception:
 
 from applypilot import config
 from applypilot.database import (
+    canonicalize_discovery_url,
     check_discovery_admission,
     get_daily_discovery_quota_window,
     get_connection,
@@ -274,6 +275,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
             url = str(row.get("job_url", ""))
             if not url or url == "nan":
                 continue
+            url = canonicalize_discovery_url(url)
             eligibility = classify_job_eligibility({
                 "title": row.get("title"),
                 "job_type": row.get("job_type"),
