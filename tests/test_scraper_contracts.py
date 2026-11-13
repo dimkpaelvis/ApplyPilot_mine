@@ -135,6 +135,9 @@ def test_hackernews_insert_creates_initial_transition(tmp_db):
 
     url = "https://example.com/hn-job"
     assert _state_of(conn, url) == "enriched"
+    row = conn.execute("SELECT company, site FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert row["company"] == "StartupCo"
+    assert row["site"] == "hackernews"
 
     transitions = _transitions_for(conn, url)
     assert len(transitions) == 1, f"Expected 1 transition, got {len(transitions)}"
@@ -196,6 +199,9 @@ def test_costco_insert_creates_initial_transition(tmp_db):
 
     url = "https://careers.costco.com/job/12345"
     assert _state_of(conn, url) == "enriched"
+    row = conn.execute("SELECT company, site FROM jobs WHERE url = ?", (url,)).fetchone()
+    assert row["company"] == "Costco"
+    assert row["site"] == "costco"
 
     transitions = _transitions_for(conn, url)
     assert len(transitions) == 1, f"Expected 1 transition, got {len(transitions)}"
@@ -444,3 +450,94 @@ def test_jobspy_duplicate_backfills_missing_company_without_overwriting_known_va
         "SELECT company FROM jobs WHERE url = ?", (base["job_url"],)
     ).fetchone()
     assert row["company"] == "Acme Analytics"
+
+def test_ats_common_stores_employer_separately_from_source(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.ats_common import insert_normalized_jobs
+
+    job = {
+        "url": "https://boards.greenhouse.io/acme/jobs/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "description": "A part-time data role.",
+        "full_description": "Part-time remote data analyst role. " * 10,
+        "application_url": "https://boards.greenhouse.io/acme/jobs/123",
+        "employer_name": "Acme Analytics",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+    }
+    new, existing = insert_normalized_jobs(conn, [job], "greenhouse", "greenhouse_api")
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+    assert row["site"] == "greenhouse"
+
+
+def test_amazon_stores_company_and_source_separately(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.amazon import _insert_jobs
+
+    job = {
+        "url": "https://amazon.jobs/en/jobs/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+        "description": "A part-time data role.",
+        "full_description": "Part-time remote data analyst role. " * 10,
+    }
+    new, existing = _insert_jobs(conn, [job])
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Amazon"
+    assert row["site"] == "amazon"
+
+
+def test_builtin_stores_employer_and_source_separately(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.builtin import _insert_jobs
+
+    job = {
+        "url": "https://builtin.com/job/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "work_mode": "remote",
+        "employer_name": "Acme Analytics",
+        "description": "A part-time data role.",
+    }
+    new, existing = _insert_jobs(conn, [job])
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+    assert row["site"] == "builtin"
+
+
+def test_smartextract_stores_company_when_extracted(tmp_db):
+    conn = tmp_db()
+    from applypilot.discovery.smartextract import _store_jobs_filtered
+
+    job = {
+        "url": "https://example.com/careers/123",
+        "title": "Part-time Data Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+        "company": "Acme Analytics",
+        "description": "A part-time data role.",
+    }
+    new, existing = _store_jobs_filtered(
+        conn, [job], "Example Careers", "json_ld", accept_locs=[], reject_locs=[]
+    )
+    assert (new, existing) == (1, 0)
+    row = conn.execute(
+        "SELECT company, site FROM jobs WHERE url = ?", (job["url"],)
+    ).fetchone()
+    assert row["company"] == "Acme Analytics"
+    assert row["site"] == "smartextract"
