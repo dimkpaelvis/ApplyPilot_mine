@@ -23,6 +23,7 @@ import yaml
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import (
+    canonicalize_discovery_url,
     check_discovery_admission,
     get_daily_discovery_quota_window,
     get_connection,
@@ -385,6 +386,7 @@ def store_results(conn: sqlite3.Connection, jobs: list[dict], employers: dict) -
                     url = f"{emp['base_url']}/{emp['site_id']}{job['external_path']}"
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
 
             description = job.get("full_description", "")
             short_desc = description[:500] if description else None
