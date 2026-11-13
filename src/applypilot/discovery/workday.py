@@ -23,7 +23,7 @@ import yaml
 from applypilot import config
 from applypilot.config import CONFIG_DIR
 from applypilot.database import get_connection, init_db, write_with_retry
-from applypilot.discovery.eligibility import classify_job_eligibility
+from applypilot.discovery.eligibility import classify_job_eligibility, normalize_employment_type
 
 log = logging.getLogger(__name__)
 
@@ -188,6 +188,21 @@ def workday_detail(employer: dict, external_path: str) -> dict:
 
 # -- Search + paginate -------------------------------------------------------
 
+def _summary_employment_rejected(job: dict) -> bool:
+    """Reject only explicit full-time/non-target employment types in search metadata.
+
+    Workday search summaries commonly expose bulletFields such as "Full time".
+    Filtering only explicit disallowed values avoids guessing when the summary
+    omits employment type; unknown summaries still go through detail validation.
+    """
+    bullet_fields = job.get("bullet_fields") or []
+    if isinstance(bullet_fields, str):
+        bullet_fields = [bullet_fields]
+    summary = " ".join(str(value) for value in bullet_fields if value)
+    employment = normalize_employment_type(None, summary, job.get("title") or "")
+    return employment in {"full_time", "other"}
+
+
 def search_employer(
     employer_key: str,
     employer: dict,
@@ -257,6 +272,7 @@ def search_employer(
                 "title": j.get("title", ""),
                 "location": loc,
                 "posted": j.get("postedOn", ""),
+                "bullet_fields": j.get("bulletFields") or [],
                 "external_path": j.get("externalPath", ""),
                 "employer_key": employer_key,
                 "employer_name": employer["name"],
@@ -422,6 +438,19 @@ def _process_one(
     if not jobs:
         return {"employer": emp["name"], "query": search_text,
                 "found": 0, "new": 0, "existing": 0}
+
+    summary_count = len(jobs)
+    jobs = [job for job in jobs if not _summary_employment_rejected(job)]
+    skipped_summary = summary_count - len(jobs)
+    if skipped_summary:
+        log.info(
+            "%s: skipped %d explicit full-time/non-target listings from search summaries",
+            emp["name"], skipped_summary,
+        )
+    if not jobs:
+        return {"employer": emp["name"], "query": search_text,
+                "found": summary_count, "new": 0, "existing": 0,
+                "summary_filtered": skipped_summary}
 
     try:
         jobs = fetch_details(emp, jobs)
