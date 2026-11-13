@@ -29,6 +29,7 @@ from applypilot.database import (
     check_discovery_admission,
     get_daily_discovery_quota_window,
     init_db,
+    log_discovery_quota_capped,
     write_with_retry,
 )
 from applypilot.discovery.eligibility import classify_job_eligibility
@@ -265,8 +266,7 @@ def _store_hn_job(
             integrity_failed["v"] = True
 
     write_with_retry(conn, _do_inserts)
-    if capped["v"]:
-        log.warning("Hacker News: daily unique-job discovery limit reached; listing skipped.")
+    log_discovery_quota_capped("Hacker News", int(capped["v"]), quota_window)
     return not integrity_failed["v"] and not capped["v"]
 
 
