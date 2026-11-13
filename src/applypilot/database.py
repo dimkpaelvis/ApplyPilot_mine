@@ -1266,8 +1266,8 @@ def check_discovery_admission(
 ) -> str:
     """Check whether a discovery adapter may insert a new unique job.
 
-    Returns one of: "allowed", "existing", or "capped". Every discovery
-    adapter must call this immediately before INSERT.
+    Returns "allowed" or "capped". Existing URLs return "allowed" so the
+    adapter's existing duplicate handler can still repair metadata.
 
     For an enabled quota, BEGIN IMMEDIATE serializes the count-and-insert
     decision across concurrent discovery workers/processes. The caller's
@@ -1283,7 +1283,7 @@ def check_discovery_admission(
         conn.execute("BEGIN IMMEDIATE")
 
     if conn.execute("SELECT 1 FROM jobs WHERE url = ?", (url,)).fetchone():
-        return "existing"
+        return "allowed"
 
     if daily_limit <= 0:
         return "allowed"
