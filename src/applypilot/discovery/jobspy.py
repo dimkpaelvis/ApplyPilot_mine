@@ -347,6 +347,15 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                # A duplicate URL may have been discovered previously without
+                # employer metadata. Backfill only a missing company; never
+                # overwrite a known employer with a later blank/incorrect value.
+                if _company:
+                    conn.execute(
+                        "UPDATE jobs SET company = ? "
+                        "WHERE url = ? AND (company IS NULL OR TRIM(company) = '')",
+                        (_company, url),
+                    )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
