@@ -56,7 +56,7 @@ def test_daily_unique_job_cap_can_be_disabled(tmp_db, monkeypatch):
     assert new == 3
     assert duplicates == 0
 
-def test_daily_cap_is_shared_with_ats_adapters_and_duplicates_still_repair(tmp_db, monkeypatch):
+def test_daily_cap_is_shared_with_ats_adapters_and_duplicates_still_repair(tmp_db, monkeypatch, caplog):
     from applypilot import config
     from applypilot.database import store_jobs
     from applypilot.discovery.ats_common import insert_normalized_jobs
@@ -108,6 +108,7 @@ def test_daily_cap_is_shared_with_ats_adapters_and_duplicates_still_repair(tmp_d
     assert row["company"] == "Acme Analytics"
     assert row["site"] == "test"
     assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+    assert "greenhouse: daily unique-job discovery limit reached" in caplog.text
 
 
 def test_daily_cap_does_not_count_manual_tracking_stubs(tmp_db, monkeypatch):
@@ -175,7 +176,7 @@ def test_daily_cap_is_serialized_across_concurrent_discovery_writers(tmp_db, mon
     assert sum(new for new, _ in results) == 1
     assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
 
-def test_daily_cap_is_enforced_by_every_direct_discovery_adapter(tmp_db, monkeypatch):
+def test_daily_cap_is_enforced_by_every_direct_discovery_adapter(tmp_db, monkeypatch, caplog):
     import pandas as pd
 
     from applypilot import config
@@ -266,6 +267,8 @@ def test_daily_cap_is_enforced_by_every_direct_discovery_adapter(tmp_db, monkeyp
     assert _store_hn_job(conn, hn_job, "Who is Hiring?") is False
 
     assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+    for source in ("JobSpy", "Workday", "Amazon", "Costco", "BuiltIn", "SmartExtract", "Hacker News"):
+        assert f"{source}: daily unique-job discovery limit reached" in caplog.text
 
 def test_direct_adapter_canonicalizes_embedded_ats_url_before_deduplication(tmp_db, monkeypatch):
     import pandas as pd
