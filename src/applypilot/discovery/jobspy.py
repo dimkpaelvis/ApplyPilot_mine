@@ -50,7 +50,7 @@ except Exception:
     pass  # If patching fails, fall back to original behavior
 
 from applypilot import config
-from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, write_with_retry)
+from applypilot.database import (check_discovery_admission, get_daily_discovery_quota_window, get_connection, init_db, log_discovery_quota_capped, write_with_retry)
 from applypilot.discovery.eligibility import (
     classify_job_eligibility,
     configured_remote_countries,
@@ -365,6 +365,7 @@ def store_jobspy_results(conn: sqlite3.Connection, df, source_label: str) -> tup
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
+    log_discovery_quota_capped("JobSpy", counts["capped"], quota_window)
     return counts["new"], counts["existing"]
 
 
