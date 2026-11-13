@@ -229,12 +229,12 @@ def _store_hn_job(
         integrity_failed["v"] = False
         try:
             conn.execute(
-                "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                 "discovered_at, posted_at, full_description, detail_scraped_at, state, "
                 "employment_type, workplace_type, eligibility_status, eligibility_reason) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (url, title, salary, description, location,
-                 f"HN: {company}", "hackernews", now, posted_at, description, now, initial_state,
+                 "hackernews", company, "hackernews", now, posted_at, description, now, initial_state,
                  eligibility["employment_type"], eligibility["workplace_type"],
                  eligibility["eligibility_status"], eligibility["eligibility_reason"]),
             )
