@@ -111,17 +111,18 @@ def insert_normalized_jobs(
                 continue
             full_description = job.get("full_description")
             detail_scraped_at = now if full_description else None
-            site = job.get("employer_name", default_site)
+            site = default_site
+            company = str(job.get("employer_name") or "").strip() or None
             initial_state = "enriched" if full_description else "discovered"
             try:
                 conn.execute(
-                    "INSERT INTO jobs (url, title, salary, description, location, site, strategy, "
+                    "INSERT INTO jobs (url, title, salary, description, location, site, company, strategy, "
                     "discovered_at, posted_at, full_description, application_url, "
                     "detail_scraped_at, state, employment_type, workplace_type, "
                     "eligibility_status, eligibility_reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), None, job.get("description"),
-                     job.get("location"), site, strategy, now,
+                     job.get("location"), site, company, strategy, now,
                      job.get("posted_at"), full_description,
                      job.get("application_url"), detail_scraped_at, initial_state,
                      eligibility["employment_type"], eligibility["workplace_type"],
@@ -135,6 +136,12 @@ def insert_normalized_jobs(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
+                if company:
+                    conn.execute(
+                        "UPDATE jobs SET company = ? "
+                        "WHERE url = ? AND strategy = ? AND (company IS NULL OR TRIM(company) = '')",
+                        (company, url, strategy),
+                    )
                 counts["existing"] += 1
 
     write_with_retry(conn, _do_inserts)
