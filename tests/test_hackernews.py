@@ -21,7 +21,7 @@ def _make_db() -> sqlite3.Connection:
         "CREATE TABLE jobs ("
         "  url TEXT PRIMARY KEY, title TEXT, salary TEXT, description TEXT,"
         "  location TEXT, site TEXT, strategy TEXT, discovered_at TEXT,"
-        "  posted_at TEXT, full_description TEXT, detail_scraped_at TEXT,"
+        "  company TEXT, posted_at TEXT, full_description TEXT, detail_scraped_at TEXT,"
         "  state TEXT DEFAULT 'discovered',"
         "  employment_type TEXT, workplace_type TEXT,"
         "  eligibility_status TEXT, eligibility_reason TEXT"
