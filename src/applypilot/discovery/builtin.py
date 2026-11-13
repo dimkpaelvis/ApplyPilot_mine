@@ -31,6 +31,7 @@ from html.parser import HTMLParser
 
 from applypilot import config
 from applypilot.database import (
+    canonicalize_discovery_url,
     check_discovery_admission,
     get_daily_discovery_quota_window,
     get_connection,
@@ -246,6 +247,7 @@ def _insert_jobs(conn: sqlite3.Connection, jobs: list[dict]) -> tuple[int, int]:
             url = job.get("url")
             if not url:
                 continue
+            url = canonicalize_discovery_url(url)
             eligibility = classify_job_eligibility({
                 **job, "workplace_type": job.get("work_mode"),
             }, require_remote=True)
