@@ -163,11 +163,10 @@ def run_ats_crawl(
 
     Args:
         label: human-readable name in log lines, e.g. "Greenhouse".
-        default_site: ``jobs.site`` fallback when the per-job dict has no
-            ``employer_name`` (shouldn't happen, but defensive).
+        default_site: Source label stored in ``jobs.site``, e.g. "greenhouse".
         strategy: ``jobs.strategy`` value, e.g. "greenhouse_api".
-        employers: ``{slug: meta_dict}``; ``meta_dict["name"]`` becomes the
-            ``site`` column.
+        employers: ``{slug: meta_dict}``; ``meta_dict["name"]`` is stored
+            in the ``company`` column.
         scrape_one: function called per (slug, meta, accept_locs); returns
             (jobs_list, error_str_or_None). Each job dict must match the
             shape ``insert_normalized_jobs`` expects.
