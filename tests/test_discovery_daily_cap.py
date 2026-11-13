@@ -174,3 +174,95 @@ def test_daily_cap_is_serialized_across_concurrent_discovery_writers(tmp_db, tmp
 
     assert sum(new for new, _ in results) == 1
     assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
+
+def test_daily_cap_is_enforced_by_every_direct_discovery_adapter(tmp_db, monkeypatch):
+    import pandas as pd
+
+    from applypilot import config
+    from applypilot.database import store_jobs
+    from applypilot.discovery.amazon import _insert_jobs as insert_amazon
+    from applypilot.discovery.builtin import _insert_jobs as insert_builtin
+    from applypilot.discovery.costco import _insert_jobs as insert_costco
+    from applypilot.discovery.hackernews import _store_hn_job
+    from applypilot.discovery.jobspy import store_jobspy_results
+    from applypilot.discovery.smartextract import _store_jobs_filtered
+    from applypilot.discovery.workday import store_results as store_workday
+
+    monkeypatch.setattr(
+        config,
+        "load_search_config",
+        lambda: {"defaults": {"daily_unique_job_limit": 1, "daily_unique_timezone": "Europe/London"}},
+    )
+    conn = tmp_db()
+    assert store_jobs(
+        conn,
+        [{"url": "https://example.com/jobs/quota-seed", "title": "Quota seed"}],
+        "test",
+        "jobspy",
+    ) == (1, 0)
+
+    jobspy_df = pd.DataFrame([{
+        "job_url": "https://indeed.com/jobs/quota-jobspy",
+        "title": "Part-time Analyst",
+        "company": "JobSpy Co",
+        "location": "Remote - United Kingdom",
+        "job_type": "parttime",
+        "description": "Role summary",
+        "site": "indeed",
+        "is_remote": True,
+    }])
+    assert store_jobspy_results(conn, jobspy_df, "test") == (0, 0)
+
+    workday_job = {
+        "apply_url": "https://acme.wd5.myworkdayjobs.com/jobs/quota-workday",
+        "title": "Part-time Analyst",
+        "employer_name": "Acme",
+        "location": "Remote - United Kingdom",
+        "time_type": "part_time",
+        "remote_type": "remote",
+        "full_description": "Part-time remote analyst role. " * 10,
+    }
+    assert store_workday(conn, [workday_job], {"acme": {"name": "Acme"}}) == (0, 0)
+
+    direct_job = {
+        "url": "https://example.com/jobs/quota-direct",
+        "title": "Part-time Analyst",
+        "location": "Remote - United Kingdom",
+        "employment_type": "part_time",
+        "workplace_type": "remote",
+        "description": "Role summary",
+        "full_description": "Part-time remote analyst role. " * 10,
+        "application_url": "https://example.com/jobs/quota-direct",
+    }
+    assert insert_amazon(conn, [direct_job]) == (0, 0)
+    assert insert_costco(conn, [direct_job]) == (0, 0)
+
+    builtin_job = {
+        **direct_job,
+        "url": "https://builtin.com/jobs/quota-builtin",
+        "work_mode": "remote",
+        "employer_name": "BuiltIn Co",
+    }
+    assert insert_builtin(conn, [builtin_job]) == (0, 0)
+
+    smart_job = {
+        **direct_job,
+        "url": "https://example.com/jobs/quota-smart",
+        "company": "Smart Co",
+    }
+    assert _store_jobs_filtered(
+        conn, [smart_job], "Example", "json_ld", accept_locs=[], reject_locs=[]
+    ) == (0, 0)
+
+    hn_job = {
+        "url": "https://example.com/jobs/quota-hn",
+        "title": "Part-time Analyst",
+        "company": "HN Co",
+        "location": "Remote - United Kingdom",
+        "remote": True,
+        "employment_type": "parttime",
+        "description": "Part-time remote analyst role. " * 10,
+    }
+    assert _store_hn_job(conn, hn_job, "Who is Hiring?") is False
+
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 1
