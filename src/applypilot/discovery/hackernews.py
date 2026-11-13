@@ -245,6 +245,13 @@ def _store_hn_job(
                 (url, initial_state, now, "discovered via hackernews", None),
             )
         except sqlite3.IntegrityError:
+            if company and company.casefold() not in {"unknown", "unknown company"}:
+                conn.execute(
+                    "UPDATE jobs SET company = ?, site = 'hackernews' "
+                    "WHERE url = ? AND strategy = 'hackernews' "
+                    "AND (company IS NULL OR TRIM(company) = '')",
+                    (company, url),
+                )
             integrity_failed["v"] = True
 
     write_with_retry(conn, _do_inserts)
