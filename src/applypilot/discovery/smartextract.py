@@ -93,6 +93,14 @@ def load_sites() -> list[dict]:
     return data.get("sites", [])
 
 
+def _normalise_company(value) -> str | None:
+    """Return a real employer label, not a model-generated unknown placeholder."""
+    company = str(value or "").strip()
+    if company.casefold() in {"", "unknown", "unknown company", "n/a", "none", "null"}:
+        return None
+    return company
+
+
 def _store_jobs_filtered(
     conn: sqlite3.Connection,
     jobs: list[dict],
@@ -130,7 +138,7 @@ def _store_jobs_filtered(
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (url, job.get("title"), job.get("salary"), description,
                      job.get("location"), "smartextract",
-                     str(job.get("company") or "").strip() or None, strategy, now,
+                     _normalise_company(job.get("company")), strategy, now,
                      job.get("posted_at"), initial_state, eligibility["employment_type"],
                      eligibility["workplace_type"], eligibility["eligibility_status"],
                      eligibility["eligibility_reason"]),
@@ -143,7 +151,7 @@ def _store_jobs_filtered(
                 )
                 counts["new"] += 1
             except sqlite3.IntegrityError:
-                company = str(job.get("company") or "").strip() or None
+                company = _normalise_company(job.get("company"))
                 if company:
                     conn.execute(
                         "UPDATE jobs SET company = ?, site = 'smartextract' "
