@@ -33,7 +33,7 @@ def test_extracts_text_content_blocks():
             },
         }]
     }
-    assert _extract_openai_compat_text(payload) == "first\\nsecond"
+    assert _extract_openai_compat_text(payload) == "first\nsecond"
 
 
 @pytest.mark.parametrize(
