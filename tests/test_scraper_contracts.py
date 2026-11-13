@@ -541,3 +541,44 @@ def test_smartextract_stores_company_when_extracted(tmp_db):
     ).fetchone()
     assert row["company"] == "Acme Analytics"
     assert row["site"] == "smartextract"
+
+def test_workday_summary_prefilter_rejects_only_explicit_non_target_employment():
+    from applypilot.discovery.workday import _summary_employment_rejected
+
+    assert _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": ["Full time"]})
+    assert _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": ["Internship"]})
+    assert not _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": ["Part-time"]})
+    assert not _summary_employment_rejected({"title": "Data Analyst", "bullet_fields": []})
+
+
+def test_workday_does_not_fetch_details_for_explicit_full_time_summary(monkeypatch):
+    from applypilot.discovery import workday
+
+    monkeypatch.setattr(
+        workday,
+        "search_employer",
+        lambda *args, **kwargs: [{
+            "title": "Senior Data Analyst",
+            "location": "Remote - United Kingdom",
+            "bullet_fields": ["Full time"],
+            "external_path": "/job/123",
+        }],
+    )
+    monkeypatch.setattr(
+        workday,
+        "fetch_details",
+        lambda *args, **kwargs: pytest.fail("Full-time summary must be filtered before detail fetch"),
+    )
+
+    result = workday._process_one(
+        "acme",
+        {"acme": {"name": "Acme"}},
+        "data analyst",
+        True,
+        [],
+        [],
+    )
+
+    assert result["found"] == 1
+    assert result["summary_filtered"] == 1
+    assert result["new"] == 0
