@@ -26,6 +26,7 @@ import httpx
 
 from applypilot import config
 from applypilot.database import (
+    canonicalize_discovery_url,
     check_discovery_admission,
     get_daily_discovery_quota_window,
     init_db,
@@ -208,6 +209,7 @@ def _store_hn_job(
         slug = re.sub(r'[^a-z0-9]+', '-', f"{company}-{title}".lower()).strip('-')
         url = f"https://news.ycombinator.com/item?id={slug}"
 
+    url = canonicalize_discovery_url(url)
     title = job.get("title") or "Unknown Role"
     company_value = str(job.get("company") or "").strip()
     company = None if company_value.casefold() in {"", "unknown", "unknown company", "n/a", "none"} else company_value
